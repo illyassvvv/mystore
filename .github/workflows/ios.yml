@@ -2,24 +2,41 @@ name: Build iOS IPA
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: stable
+          channel: stable
 
-      - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - name: Install dependencies
+        run: flutter pub get
 
-      - name: Upload app
+      - name: Enable iOS
+        run: flutter config --enable-ios
+
+      - name: Build iOS
+        run: flutter build ios --release --no-codesign
+
+      - name: Create Payload
+        run: |
+          mkdir Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+
+      - name: Make IPA
+        run: zip -r MyStore.ipa Payload
+
+      - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build
-          path: build/ios/iphoneos
+          name: MyStore-IPA
+          path: MyStore.ipa
