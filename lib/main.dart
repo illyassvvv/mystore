@@ -1,378 +1,385 @@
-import 'dart:ui';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter/cupertino.dart'; // أضفنا هذه المكتبة لأزرار الآيفون
+import 'dart:io';
+import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 void main() {
-  runApp(const MyStore());
+  runApp(const MyApp());
 }
 
-////////////////////////////////////////////////////////////
-/// DOWNLOAD FUNCTION
-Future<void> downloadIPA(String url, String name) async {
-  final dir = await getApplicationDocumentsDirectory();
-  final file = File("${dir.path}/$name.ipa");
-
-  final response = await http.get(Uri.parse(url));
-  await file.writeAsBytes(response.bodyBytes);
-}
-
-////////////////////////////////////////////////////////////
-/// ROOT APP
-class MyStore extends StatefulWidget {
-  const MyStore({super.key});
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
 
   @override
-  State<MyStore> createState() => _MyStoreState();
+  State<MyApp> createState() => _MyAppState();
 }
 
-class _MyStoreState extends State<MyStore> {
-  bool darkMode = true;
+class _MyAppState extends State<MyApp> {
+  bool isDarkMode = true;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'متجري الخاص العصري',
       debugShowCheckedModeBanner: false,
-      themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
-      darkTheme: ThemeData.dark()
-          .copyWith(scaffoldBackgroundColor: Colors.transparent),
-      theme: ThemeData.light()
-          .copyWith(scaffoldBackgroundColor: Colors.transparent),
-      home: Home(
-        darkMode: darkMode,
-        onThemeChanged: (v) => setState(() => darkMode = v),
-      ),
-    );
-  }
-}
-
-////////////////////////////////////////////////////////////
-/// HOME
-class Home extends StatefulWidget {
-  final bool darkMode;
-  final Function(bool) onThemeChanged;
-
-  const Home({
-    super.key,
-    required this.darkMode,
-    required this.onThemeChanged,
-  });
-
-  @override
-  State<Home> createState() => _HomeState();
-}
-
-class _HomeState extends State<Home> {
-  int index = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [
-      const AppsPage(),
-      const DownloadsPage(),
-      SettingsPage(
-        darkMode: widget.darkMode,
-        onChanged: widget.onThemeChanged,
-      ),
-    ];
-
-    return Scaffold(
-      body: pages[index],
-      bottomNavigationBar: GlassNavBar(
-        index: index,
-        onTap: (i) => setState(() => index = i),
-      ),
-    );
-  }
-}
-
-////////////////////////////////////////////////////////////
-/// NAVBAR
-class GlassNavBar extends StatelessWidget {
-  final int index;
-  final Function(int) onTap;
-
-  const GlassNavBar({
-    super.key,
-    required this.index,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final dark =
-        Theme.of(context).brightness == Brightness.dark;
-
-    return ClipRRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-        child: BottomNavigationBar(
-          backgroundColor:
-              dark ? Colors.black26 : Colors.white70,
-          currentIndex: index,
-          onTap: onTap,
-          items: const [
-            BottomNavigationBarItem(
-                icon: Icon(Icons.apps), label: "Apps"),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.download),
-                label: "Downloads"),
-            BottomNavigationBarItem(
-                icon: Icon(Icons.settings),
-                label: "Settings"),
-          ],
+      themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      
+      theme: ThemeData(
+        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFF0F2F5),
+        cardColor: Colors.white,
+        primarySwatch: Colors.pink,
+        useMaterial3: true,
+        fontFamily: 'Tajawal',
+        // إلغاء تأثير الضغطة (الدوائر) على مستوى التطبيق كامل ليناسب الآيفون
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        hoverColor: Colors.transparent,
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Colors.white,
+          selectedItemColor: Colors.pinkAccent,
+          unselectedItemColor: Colors.grey,
         ),
       ),
-    );
-  }
-}
 
-////////////////////////////////////////////////////////////
-/// BACKGROUND
-class GradientBackground extends StatelessWidget {
-  const GradientBackground({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final dark =
-        Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: dark
-              ? const [
-                  Color(0xff141E30),
-                  Color(0xff243B55)
-                ]
-              : const [
-                  Color(0xffe3f2fd),
-                  Colors.white
-                ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF1B1B26),
+        cardColor: const Color(0xFF252536),
+        primarySwatch: Colors.pink,
+        useMaterial3: true,
+        fontFamily: 'Tajawal',
+        // إلغاء تأثير الضغطة (الدوائر) على مستوى التطبيق كامل ليناسب الآيفون
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        hoverColor: Colors.transparent,
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Color(0xFF1B1B26),
+          selectedItemColor: Colors.pinkAccent,
+          unselectedItemColor: Colors.grey,
         ),
+      ),
+      
+      builder: (context, child) {
+        return Directionality(textDirection: TextDirection.rtl, child: child!);
+      },
+      home: MainNavigationScreen(
+        isDarkMode: isDarkMode,
+        onDarkModeChanged: (value) {
+          setState(() {
+            isDarkMode = value;
+          });
+        },
       ),
     );
   }
 }
 
-////////////////////////////////////////////////////////////
-/// APPS PAGE
-class AppsPage extends StatelessWidget {
-  const AppsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: const [
-        GradientBackground(),
-        SafeArea(
-          child: Padding(
-            padding: EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text("Apps",
-                    style: TextStyle(
-                        fontSize: 34,
-                        fontWeight:
-                            FontWeight.bold)),
-                SizedBox(height: 25),
-                AppCard(
-                    "Instagram++",
-                    "3.2",
-                    "https://speed.hetzner.de/100MB.bin"),
-                AppCard(
-                    "YouTube Elite",
-                    "18",
-                    "https://speed.hetzner.de/100MB.bin"),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-////////////////////////////////////////////////////////////
-/// APP CARD
-class AppCard extends StatefulWidget {
+class AppFile {
+  final String id;
   final String name;
   final String version;
-  final String url;
+  final String size;
+  final String iconUrl;
+  final String downloadUrl; 
+  bool isDownloading;
+  bool isDownloaded;
+  double progress; 
+  String? localFilePath;
 
-  const AppCard(
-      this.name, this.version, this.url,
-      {super.key});
-
-  @override
-  State<AppCard> createState() =>
-      _AppCardState();
+  AppFile({
+    required this.id,
+    required this.name,
+    required this.version,
+    required this.size,
+    required this.iconUrl,
+    required this.downloadUrl,
+    this.isDownloading = false,
+    this.isDownloaded = false,
+    this.progress = 0.0,
+    this.localFilePath,
+  });
 }
 
-class _AppCardState extends State<AppCard> {
-  bool loading = false;
+class MainNavigationScreen extends StatefulWidget {
+  final bool isDarkMode;
+  final ValueChanged<bool> onDarkModeChanged;
 
-  @override
-  Widget build(BuildContext context) {
-    final dark =
-        Theme.of(context).brightness ==
-            Brightness.dark;
-
-    return Padding(
-      padding: const EdgeInsets.only(
-          bottom: 20),
-      child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-              sigmaX: 35,
-              sigmaY: 35),
-          child: Container(
-            padding:
-                const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: dark
-                  ? Colors.white
-                      .withOpacity(.08)
-                  : Colors.white
-                      .withOpacity(.7),
-              borderRadius:
-                  BorderRadius.circular(
-                      28),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.apps,
-                    size: 45),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment
-                              .start,
-                      children: [
-                        Text(widget.name,
-                            style:
-                                const TextStyle(
-                                    fontSize:
-                                        18,
-                                    fontWeight:
-                                        FontWeight
-                                            .bold)),
-                        Text(
-                            "Version ${widget.version}")
-                      ]),
-                ),
-                loading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child:
-                            CircularProgressIndicator(
-                                strokeWidth:
-                                    2))
-                    : ElevatedButton(
-                        onPressed:
-                            () async {
-                          setState(() =>
-                              loading =
-                                  true);
-
-                          await downloadIPA(
-                              widget.url,
-                              widget.name);
-
-                          setState(() =>
-                              loading =
-                                  false);
-
-                          ScaffoldMessenger.of(
-                                  context)
-                              .showSnackBar(
-                            SnackBar(
-                                content:
-                                    Text("${widget.name} saved")),
-                          );
-                        },
-                        child:
-                            const Text(
-                                "GET"))
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-////////////////////////////////////////////////////////////
-/// DOWNLOAD PAGE
-class DownloadsPage extends StatelessWidget {
-  const DownloadsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        GradientBackground(),
-        Center(
-          child: Text(
-              "Downloads saved locally",
-              style:
-                  TextStyle(fontSize: 22)),
-        ),
-      ],
-    );
-  }
-}
-
-////////////////////////////////////////////////////////////
-/// SETTINGS
-class SettingsPage extends StatelessWidget {
-  final bool darkMode;
-  final Function(bool) onChanged;
-
-  const SettingsPage({
+  const MainNavigationScreen({
     super.key,
-    required this.darkMode,
-    required this.onChanged,
+    required this.isDarkMode,
+    required this.onDarkModeChanged,
   });
 
   @override
+  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+}
+
+class _MainNavigationScreenState extends State<MainNavigationScreen> {
+  int _currentIndex = 0;
+  final Dio _dio = Dio();
+
+  // تطبيقاتك الثلاثة الحصرية مع روابطها المباشرة
+  List<AppFile> myStoreApps = [
+    AppFile(
+      id: '1', 
+      name: 'Spotify Reborn', 
+      version: '8.8.0', 
+      size: '110 MB', 
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/174/174872.png', 
+      downloadUrl: 'https://files.catbox.moe/zixadh.ipa' 
+    ),
+    AppFile(
+      id: '2', 
+      name: 'YouTube Reborn', 
+      version: '19.10.5', 
+      size: '135 MB', 
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png', 
+      downloadUrl: 'https://files.catbox.moe/thkhke.ipa' 
+    ),
+    AppFile(
+      id: '3', 
+      name: 'Instagram LRD', 
+      version: '280.0.0', 
+      size: '180 MB', 
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1384/1384063.png', 
+      downloadUrl: 'https://files.catbox.moe/7y44eg.ipa' 
+    ),
+  ];
+
+  List<AppFile> myDownloadedApps = [];
+
+  Future<void> _startDownload(AppFile app) async {
+    setState(() {
+      app.isDownloading = true;
+      app.progress = 0.0;
+    });
+
+    try {
+      Directory tempDir = await getTemporaryDirectory();
+      String savePath = '${tempDir.path}/${app.name}.ipa';
+
+      await _dio.download(
+        app.downloadUrl,
+        savePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            setState(() {
+              app.progress = received / total;
+            });
+          }
+        },
+      );
+
+      setState(() {
+        app.progress = 1.0;
+        app.isDownloading = false;
+        app.isDownloaded = true;
+        app.localFilePath = savePath;
+        
+        if (!myDownloadedApps.contains(app)) {
+          myDownloadedApps.add(app);
+        }
+      });
+
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم تحميل ${app.name} بنجاح!')),
+        );
+      }
+
+    } catch (e) {
+      setState(() {
+        app.isDownloading = false;
+        app.progress = 0.0;
+      });
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('حدث خطأ أثناء التحميل! تأكد من الرابط أو الإنترنت.'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  void _saveToFiles(AppFile app) async {
+    if (app.localFilePath != null) {
+      final result = await Share.shareXFiles(
+        [XFile(app.localFilePath!)],
+        text: 'حفظ تطبيق ${app.name}',
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Stack(
+    final List<Widget> screens = [_buildHomeScreen(), _buildMyAppsScreen()];
+    
+    return Scaffold(
+      appBar: AppBar(
+        title: Row(
+          children: [
+            const Text('متجري الخاص', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Spacer(),
+            Text(widget.isDarkMode ? 'الوضع الداكن' : 'الوضع الفاتح', style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 8),
+            // استخدام زر التبديل الخاص بآيفون (CupertinoSwitch)
+            CupertinoSwitch(
+              value: widget.isDarkMode,
+              onChanged: widget.onDarkModeChanged,
+              activeColor: Colors.pinkAccent,
+            ),
+          ],
+        ),
+        backgroundColor: widget.isDarkMode ? const Color(0xFF1B1B26) : Colors.white,
+        elevation: 0,
+        foregroundColor: widget.isDarkMode ? Colors.white : Colors.black,
+      ),
+      body: SafeArea(child: screens[_currentIndex]),
+      bottomNavigationBar: BottomNavigationBar(
+        elevation: 10,
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        type: BottomNavigationBarType.fixed, // يمنع حركة الأيقونات المزعجة
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
+          BottomNavigationBarItem(icon: Icon(Icons.folder_special), label: 'تطبيقاتي'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHomeScreen() {
+    return ListView.builder(
+      itemCount: myStoreApps.length,
+      itemBuilder: (context, index) => _buildAppCard(myStoreApps[index]),
+    );
+  }
+
+  Widget _buildMyAppsScreen() {
+    return Column(
       children: [
-        const GradientBackground(),
-        SafeArea(
-          child: ListView(
-            padding:
-                const EdgeInsets.all(20),
-            children: [
-              const Text(
-                "Settings",
-                style: TextStyle(
-                    fontSize: 34,
-                    fontWeight:
-                        FontWeight.bold),
-              ),
-              const SizedBox(height: 30),
-              SwitchListTile(
-                title: const Text(
-                    "Enable Dark Mode"),
-                value: darkMode,
-                onChanged: onChanged,
-              ),
-            ],
+        const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text('تطبيقاتي المحملة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
           ),
         ),
+        Expanded(
+          child: myDownloadedApps.isEmpty
+              ? const Center(child: Text("لم تقم بتحميل أي تطبيقات بعد.", style: TextStyle(color: Colors.grey)))
+              : ListView.builder(
+                  itemCount: myDownloadedApps.length,
+                  itemBuilder: (context, index) => _buildAppCard(myDownloadedApps[index], isMyAppsTab: true),
+                ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildAppCard(AppFile app, {bool isMyAppsTab = false}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF252536) : Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: isDark ? Colors.black26 : Colors.black12,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 70, height: 70,
+            decoration: BoxDecoration(
+              color: isDark ? Colors.grey[800] : Colors.grey[200],
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: Image.network(
+                app.iconUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(app.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                const SizedBox(height: 4),
+                Text('الحجم: ${app.size} • الإصدار: ${app.version}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                const SizedBox(height: 12),
+                if (app.isDownloading) ...[
+                  LinearProgressIndicator(value: app.progress, backgroundColor: isDark ? Colors.grey[700] : Colors.grey[300], color: Colors.pinkAccent),
+                  const SizedBox(height: 4),
+                  Text('${(app.progress * 100).toInt()}%', style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                ]
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            children: [
+              if (app.isDownloaded)
+                // زر الايفون الأصلي للفتح
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                  color: CupertinoColors.activeGreen,
+                  borderRadius: BorderRadius.circular(12),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ميزة الفتح قيد التطوير')));
+                  },
+                  child: const Text('فتح', style: TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                )
+              else if (!app.isDownloading)
+                // زر الايفون الأصلي للتثبيت
+                CupertinoButton(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
+                  color: isDark ? const Color(0xFF424250) : const Color(0xFFE0E0E0),
+                  borderRadius: BorderRadius.circular(12),
+                  onPressed: () => _startDownload(app),
+                  child: Text('تثبيت', style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 14, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
+                ),
+                
+              if (app.isDownloaded && isMyAppsTab) ...[
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () => _saveToFiles(app),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.blueAccent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.blueAccent.withOpacity(0.5), width: 1),
+                    ),
+                    child: Row(
+                      children: const [
+                        Icon(Icons.save_alt, color: Colors.blueAccent, size: 18),
+                        SizedBox(width: 6),
+                        Text('حفظ في الملفات', style: TextStyle(color: Colors.blueAccent, fontSize: 13, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                )
+              ]
+            ],
+          )
+        ],
+      ),
     );
   }
 }
