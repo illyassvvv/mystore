@@ -189,7 +189,7 @@ class _StoreScreenState extends State<StoreScreen> {
         }
       });
     } catch (e) {
-      if (CancelToken.isCancel(e)) {
+      if (CancelToken.isCancel(e as DioException)) {
         // تم الإلغاء أو الإيقاف المؤقت بواسطة المستخدم
       } else {
         setState(() {
