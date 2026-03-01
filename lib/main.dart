@@ -26,12 +26,13 @@ class AppModel {
   String icon;
   String url;
   String description;
-  String age;   // إضافة العمر
-  String chart; // إضافة التقييم/الرتبة
+  String age;
+  String chart;
 
   final ValueNotifier<DownloadState> stateNotifier;
   final ValueNotifier<double> progressNotifier;
   final ValueNotifier<bool> isFavoriteNotifier;
+  final ValueNotifier<bool> isTrashedNotifier; // حالة سلة المهملات
 
   CancelToken? cancelToken;
 
@@ -46,7 +47,8 @@ class AppModel {
     required this.chart,
   })  : stateNotifier = ValueNotifier(DownloadState.none),
         progressNotifier = ValueNotifier(0.0),
-        isFavoriteNotifier = ValueNotifier(false);
+        isFavoriteNotifier = ValueNotifier(false),
+        isTrashedNotifier = ValueNotifier(false);
 
   factory AppModel.fromJson(Map<String, dynamic> json) {
     return AppModel(
@@ -55,9 +57,8 @@ class AppModel {
       size: json['size'] ?? '',
       icon: json['icon'] ?? '',
       url: json['url'] ?? '',
-      // استخدام toString() تحسباً لو تم كتابة الأرقام بدون علامات تنصيص في الـ JSON
-      description: json['description'] ?? 'This is a great app. Download now to enjoy premium features and seamless experience tailored for your device.',
-      age: json['age']?.toString() ?? '4+', 
+      description: json['description'] ?? 'This is a great app. Download now to enjoy premium features.',
+      age: json['age']?.toString() ?? '4+',
       chart: json['chart']?.toString() ?? '#1',
     );
   }
@@ -66,11 +67,12 @@ class AppModel {
     stateNotifier.dispose();
     progressNotifier.dispose();
     isFavoriteNotifier.dispose();
+    isTrashedNotifier.dispose();
   }
 }
 
 /// ==========================================
-/// 2. SERVICES (Download Logic)
+/// 2. SERVICES (Download & Trash Logic)
 /// ==========================================
 class DownloadService {
   final Dio _dio = Dio();
@@ -78,23 +80,25 @@ class DownloadService {
   Future<Directory> _getSecureAppsDirectory() async {
     final dir = await getApplicationSupportDirectory();
     final appsDir = Directory('${dir.path}/apps');
-    if (!await appsDir.exists()) {
-      await appsDir.create(recursive: true);
-    }
+    if (!await appsDir.exists()) await appsDir.create(recursive: true);
     return appsDir;
   }
 
-  String _safeFileName(String name) {
-  return name
-      .replaceAll(RegExp(r'[^\w\s]+'), '')
-      .replaceAll(' ', '_')
-      .toLowerCase();
+  Future<Directory> _getTrashDirectory() async {
+    final dir = await getApplicationSupportDirectory();
+    final trashDir = Directory('${dir.path}/trash');
+    if (!await trashDir.exists()) await trashDir.create(recursive: true);
+    return trashDir;
   }
 
   Future<String> getReliableFilePath(String appName) async {
     final dir = await _getSecureAppsDirectory();
-    final safeName = _safeFileName(appName);
-    return "${dir.path}/$safeName.ipa";
+    return "${dir.path}/$appName.ipa";
+  }
+
+  Future<String> _getTrashFilePath(String appName) async {
+    final dir = await _getTrashDirectory();
+    return "${dir.path}/$appName.ipa";
   }
 
   Future<void> startOrResumeDownload(AppModel app) async {
@@ -126,8 +130,7 @@ class DownloadService {
       int totalBytes = downloadedBytes;
       final contentRange = response.headers.value('content-range');
       if (contentRange != null) {
-        final match = RegExp(r'/(.*)$').firstMatch(contentRange);
-        if (match != null) totalBytes = int.parse(match.group(1)!);
+        totalBytes = int.parse(RegExp(r'/(.*)$').firstMatch(contentRange)!.group(1)!);
       } else {
         totalBytes += int.parse(response.headers.value('content-length') ?? '0');
       }
@@ -172,15 +175,45 @@ class DownloadService {
     app.cancelToken?.cancel("cancelled");
     app.stateNotifier.value = DownloadState.none;
     app.progressNotifier.value = 0.0;
-
-    final filePath = await getReliableFilePath(app.name);
-    final file = File(filePath);
+    final file = File(await getReliableFilePath(app.name));
     if (file.existsSync()) file.deleteSync();
   }
 
+  // دوال سلة المهملات
+  Future<void> moveToTrash(AppModel app) async {
+    final appPath = await getReliableFilePath(app.name);
+    final trashPath = await _getTrashFilePath(app.name);
+    final appFile = File(appPath);
+
+    if (appFile.existsSync()) {
+      if (File(trashPath).existsSync()) File(trashPath).deleteSync();
+      appFile.renameSync(trashPath);
+    }
+  }
+
+  Future<void> restoreFromTrash(AppModel app) async {
+    final appPath = await getReliableFilePath(app.name);
+    final trashPath = await _getTrashFilePath(app.name);
+    final trashFile = File(trashPath);
+
+    if (trashFile.existsSync()) {
+      if (File(appPath).existsSync()) File(appPath).deleteSync();
+      trashFile.renameSync(appPath);
+    }
+  }
+
+  Future<void> deletePermanently(AppModel app) async {
+    final trashPath = await _getTrashFilePath(app.name);
+    final trashFile = File(trashPath);
+    if (trashFile.existsSync()) trashFile.deleteSync();
+  }
+
   Future<bool> isFileExists(String fileName) async {
-    final filePath = await getReliableFilePath(fileName);
-    return File(filePath).existsSync();
+    return File(await getReliableFilePath(fileName)).existsSync();
+  }
+
+  Future<bool> isTrashFileExists(String fileName) async {
+    return File(await _getTrashFilePath(fileName)).existsSync();
   }
 }
 
@@ -250,9 +283,10 @@ class StoreController extends ChangeNotifier {
       app.isFavoriteNotifier.value = prefs.getBool('fav_${app.name}') ?? false;
       
       if (app.stateNotifier.value == DownloadState.none) {
-        final exists = await _downloadService.isFileExists(app.name);
-        if (exists) {
+        if (await _downloadService.isFileExists(app.name)) {
           app.stateNotifier.value = DownloadState.downloaded;
+        } else if (await _downloadService.isTrashFileExists(app.name)) {
+          app.isTrashedNotifier.value = true;
         }
       }
     }
@@ -275,6 +309,11 @@ class StoreController extends ChangeNotifier {
   }
 
   void startDownload(AppModel app) async {
+    // إذا كان التطبيق في سلة المهملات والمستخدم ضغط GET، نحذفه من المهملات لنحمله من جديد
+    if (app.isTrashedNotifier.value) {
+      await _downloadService.deletePermanently(app);
+      app.isTrashedNotifier.value = false;
+    }
     notifyListeners(); 
     await _downloadService.startOrResumeDownload(app);
     notifyListeners(); 
@@ -295,6 +334,29 @@ class StoreController extends ChangeNotifier {
     if (File(actualPath).existsSync()) {
       Share.shareXFiles([XFile(actualPath)]);
     }
+  }
+
+  // نقل لسلة المهملات
+  Future<void> moveToTrash(AppModel app) async {
+    await _downloadService.moveToTrash(app);
+    app.stateNotifier.value = DownloadState.none; // ليعود المتجر لعرض GET
+    app.isTrashedNotifier.value = true;
+    notifyListeners();
+  }
+
+  // استعادة من سلة المهملات
+  Future<void> restoreFromTrash(AppModel app) async {
+    await _downloadService.restoreFromTrash(app);
+    app.isTrashedNotifier.value = false;
+    app.stateNotifier.value = DownloadState.downloaded;
+    notifyListeners();
+  }
+
+  // حذف نهائي
+  Future<void> deletePermanently(AppModel app) async {
+    await _downloadService.deletePermanently(app);
+    app.isTrashedNotifier.value = false;
+    notifyListeners();
   }
 }
 
@@ -477,7 +539,6 @@ class AppDetailsScreen extends StatelessWidget {
                   Divider(color: isDark ? Colors.white12 : Colors.black12),
                   const SizedBox(height: 16),
                   
-                  // تم ربط هذه البيانات بـ app.size و app.age و app.chart
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -598,7 +659,8 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    // تمت زيادة التبويبات إلى 4 لإضافة سلة المهملات
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (_isSearching) {
         setState(() {
@@ -632,13 +694,14 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                 controller: _tabController,
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  _buildTabContent(_controller.filteredApps, isMyAppsTab: false),
-                  _buildTabContent(_controller.allApps.where((a) => a.isFavoriteNotifier.value).toList(), isMyAppsTab: false),
-                  _buildTabContent(_controller.allApps.where((a) => a.stateNotifier.value != DownloadState.none).toList(), isMyAppsTab: true),
+                  _buildTabContent(_controller.filteredApps, tabIndex: 0), // Store
+                  _buildTabContent(_controller.allApps.where((a) => a.isFavoriteNotifier.value).toList(), tabIndex: 1), // Favorites
+                  _buildTabContent(_controller.allApps.where((a) => a.stateNotifier.value != DownloadState.none).toList(), tabIndex: 2), // Downloads
+                  _buildTabContent(_controller.allApps.where((a) => a.isTrashedNotifier.value).toList(), tabIndex: 3), // Trash
                 ],
               ),
               Positioned(top: 0, left: 0, right: 0, child: _buildGlassHeader()),
-              Positioned(bottom: 30, left: 40, right: 40, child: _buildFloatingBottomNav()),
+              Positioned(bottom: 30, left: 30, right: 30, child: _buildFloatingBottomNav()),
             ],
           );
         },
@@ -699,7 +762,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildTabContent(List<AppModel> list, {required bool isMyAppsTab}) {
+  Widget _buildTabContent(List<AppModel> list, {required int tabIndex}) {
     if (_controller.isLoading) return const Center(child: CupertinoActivityIndicator(radius: 15));
     
     return CustomScrollView(
@@ -722,7 +785,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                   final app = list[i];
                   return KeyedSubtree(
                     key: ValueKey(app.name),
-                    child: _buildAnimatedCard(app, isMyAppsTab),
+                    child: _buildAnimatedCard(app, tabIndex),
                   );
                 },
                 childCount: list.length,
@@ -754,6 +817,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                   _navItem(0, CupertinoIcons.square_grid_2x2_fill, CupertinoIcons.square_grid_2x2),
                   _navItem(1, CupertinoIcons.heart_fill, CupertinoIcons.heart),
                   _navItem(2, CupertinoIcons.folder_fill, CupertinoIcons.folder),
+                  _navItem(3, CupertinoIcons.trash_fill, CupertinoIcons.trash), // زر سلة المهملات
                 ],
               ),
             ),
@@ -783,7 +847,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildAnimatedCard(AppModel app, bool isMyAppsTab) {
+  Widget _buildAnimatedCard(AppModel app, int tabIndex) {
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -817,7 +881,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                 duration: const Duration(milliseconds: 300),
                 child: isDownloadingOrPaused
                     ? _buildDownloadingLayout(app, state)
-                    : _buildNormalLayout(app, state, isMyAppsTab),
+                    : _buildNormalLayout(app, state, tabIndex),
               ),
             ),
           );
@@ -826,7 +890,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildNormalLayout(AppModel app, DownloadState state, bool isMyAppsTab) {
+  Widget _buildNormalLayout(AppModel app, DownloadState state, int tabIndex) {
     return Row(
       key: ValueKey('${app.name}_nr'),
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -844,16 +908,46 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
           ),
         ),
         const SizedBox(width: 10),
-        Row(
-          children: [
-            if (isMyAppsTab)
-              _featherButton(text: "Save", icon: CupertinoIcons.arrow_down_doc_fill, bgColor: const Color(0xFF1E3A28), textColor: const Color(0xFF34C759), onTap: () => _controller.saveToFile(app))
-            else if (state == DownloadState.downloaded)
-              _featherButton(text: "Installed", bgColor: widget.isDark ? Colors.grey[800] : Colors.grey[300], textColor: Colors.grey, onTap: () {})
-            else
-              _featherButton(text: "GET", onTap: () => _controller.startDownload(app)),
-              
-            if (!isMyAppsTab) ...[
+        
+        // تغيير الأزرار بناءً على التبويب المفتوح
+        if (tabIndex == 3) // تبويب سلة المهملات
+          Row(
+            children: [
+              _featherButton(text: "Restore", bgColor: const Color(0xFF1E3A28), textColor: const Color(0xFF34C759), onTap: () => _controller.restoreFromTrash(app)),
+              const SizedBox(width: 8),
+              AppleBouncingButton(
+                onTap: () => _controller.deletePermanently(app),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.red.withOpacity(0.15),
+                  child: const Icon(CupertinoIcons.delete_solid, color: Colors.red, size: 18),
+                ),
+              ),
+            ],
+          )
+        else if (tabIndex == 2) // تبويب التحميلات
+          Row(
+            children: [
+              _featherButton(text: "Save", icon: CupertinoIcons.arrow_down_doc_fill, bgColor: const Color(0xFF1E3A28), textColor: const Color(0xFF34C759), onTap: () => _controller.saveToFile(app)),
+              const SizedBox(width: 8),
+              AppleBouncingButton(
+                onTap: () => _controller.moveToTrash(app),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.red.withOpacity(0.15),
+                  child: const Icon(CupertinoIcons.trash, color: Colors.red, size: 18),
+                ),
+              )
+            ],
+          )
+        else // المتجر أو المفضلة
+          Row(
+            children: [
+              if (state == DownloadState.downloaded)
+                _featherButton(text: "Installed", bgColor: widget.isDark ? Colors.grey[800] : Colors.grey[300], textColor: Colors.grey, onTap: () {})
+              else
+                _featherButton(text: "GET", onTap: () => _controller.startDownload(app)),
+                
               const SizedBox(width: 14),
               ValueListenableBuilder<bool>(
                 valueListenable: app.isFavoriteNotifier,
@@ -869,8 +963,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                 },
               ),
             ]
-          ],
-        )
+          )
       ],
     );
   }
