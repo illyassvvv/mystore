@@ -10,7 +10,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -18,20 +18,20 @@ jobs:
           channel: stable
           flutter-version: 3.41.2
 
-      - name: Install dependencies
+      - name: Install packages
         run: flutter pub get
 
-      - name: Build iOS
-        run: flutter build ios --release --no-codesign
-
-      - name: Create IPA
+      # ⭐ build WITHOUT signing
+      - name: Build iOS Runner
         run: |
+          flutter build ios --release --no-codesign
+          cd build/ios/iphoneos
           mkdir Payload
-          cp -r build/ios/iphoneos/Runner.app Payload
+          cp -r Runner.app Payload/
           zip -r app.ipa Payload
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: app.ipa
+          path: build/ios/iphoneos/app.ipa
