@@ -25,7 +25,6 @@ class AppModel {
   final String icon;
   final String url;
 
-  // ValueNotifiers لمنع الـ setState العشوائي وتحديث أجزاء محددة فقط
   final ValueNotifier<DownloadState> stateNotifier;
   final ValueNotifier<double> progressNotifier;
   final ValueNotifier<bool> isFavoriteNotifier;
@@ -53,7 +52,6 @@ class AppModel {
     );
   }
 
-  // تنظيف الذاكرة
   void dispose() {
     stateNotifier.dispose();
     progressNotifier.dispose();
@@ -67,7 +65,6 @@ class AppModel {
 class DownloadService {
   final Dio _dio = Dio();
 
-  // الحصول على مسار تخزين آمن لا يحذفه النظام
   Future<Directory> _getSecureAppsDirectory() async {
     final dir = await getApplicationSupportDirectory();
     final appsDir = Directory('${dir.path}/apps');
@@ -130,7 +127,6 @@ class DownloadService {
           raf.writeFromSync(chunk);
           downloadedBytes += chunk.length;
 
-          // Throttling: تحديث الـ UI كل 150 ملي ثانية فقط لرفع الأداء
           final now = DateTime.now().millisecondsSinceEpoch;
           if (now - lastUpdate > 150 || downloadedBytes == totalBytes) {
             lastUpdate = now;
@@ -147,7 +143,7 @@ class DownloadService {
       }
     } catch (e) {
       if (e is DioException && CancelToken.isCancel(e)) {
-        // تم الإيقاف المؤقت
+        // Paused by user
       } else {
         app.stateNotifier.value = DownloadState.none;
         app.progressNotifier.value = 0.0;
@@ -249,6 +245,9 @@ class StoreController extends ChangeNotifier {
     app.isFavoriteNotifier.value = !app.isFavoriteNotifier.value;
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool('fav_${app.name}', app.isFavoriteNotifier.value);
+    
+    // إشعار واجهة المستخدم لتحديث قسم المفضلة فوراً
+    notifyListeners();
   }
 
   void startDownload(AppModel app) => _downloadService.startOrResumeDownload(app);
@@ -487,6 +486,8 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
       indicatorSize: TabBarIndicatorSize.tab,
       indicatorWeight: 2,
       dividerColor: Colors.transparent,
+      // هذا السطر يمنع ظهور الدائرة الرمادية (تأثير الأندرويد) عند الضغط
+      overlayColor: MaterialStateProperty.all(Colors.transparent),
       tabs: const [ Tab(text: "Apps"), Tab(text: "Favorites"), Tab(text: "Downloads") ],
     );
   }
@@ -518,7 +519,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
   }
 
   Widget _buildAnimatedCard(AppModel app, bool isMyAppsTab) {
-    // الاستماع لحالة التطبيق فقط (لإعادة البناء محلياً وليس الشاشة كلها)
     return ValueListenableBuilder<DownloadState>(
       valueListenable: app.stateNotifier,
       builder: (context, state, child) {
@@ -580,7 +580,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
               
             if (!isMyAppsTab) ...[
               const SizedBox(width: 12),
-              // استماع خاص لزر المفضلة
               ValueListenableBuilder<bool>(
                 valueListenable: app.isFavoriteNotifier,
                 builder: (context, isFavorite, child) {
@@ -602,7 +601,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
   }
 
   Widget _buildDownloadingLayout(AppModel app, DownloadState state) {
-    // استماع خاص لشريط التحميل للحصول على أعلى أداء ممكن
     return ValueListenableBuilder<double>(
       key: ValueKey('${app.name}_dl'),
       valueListenable: app.progressNotifier,
