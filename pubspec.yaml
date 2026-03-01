@@ -30,9 +30,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  path_provider: ^2.1.5 # To get device folders (Documents/Downloads)
-  dio: ^5.9.1 # For downloading the actual files from your server
-  share_plus: ^12.0.1
+
+  cupertino_icons: ^1.0.6
+  http: ^1.2.1
+  cached_network_image: ^3.3.1
+  share_plus: ^7.2.2
 
   
 
