@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:ui'; 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -195,6 +196,8 @@ class StoreController extends ChangeNotifier {
   String errorMessage = '';
 
   Future<void> initStore() async {
+    isLoading = true;
+    notifyListeners();
     try {
       final dio = Dio();
       final response = await dio.get(_jsonUrl);
@@ -208,10 +211,14 @@ class StoreController extends ChangeNotifier {
       isLoading = false;
       notifyListeners();
     } catch (e) {
-      errorMessage = "Failed to load apps. Check your internet connection.";
+      errorMessage = "Failed to load apps. Pull to refresh.";
       isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<void> refreshApps() async {
+    await initStore();
   }
 
   Future<void> _loadSavedPreferences() async {
@@ -245,18 +252,34 @@ class StoreController extends ChangeNotifier {
     app.isFavoriteNotifier.value = !app.isFavoriteNotifier.value;
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool('fav_${app.name}', app.isFavoriteNotifier.value);
-    
-    // إشعار واجهة المستخدم لتحديث قسم المفضلة فوراً
     notifyListeners();
   }
 
-  void startDownload(AppModel app) => _downloadService.startOrResumeDownload(app);
-  void pauseDownload(AppModel app) => _downloadService.pauseDownload(app);
-  void cancelDownload(AppModel app) => _downloadService.cancelDownload(app);
+  void startDownload(AppModel app) async {
+    notifyListeners(); 
+    await _downloadService.startOrResumeDownload(app);
+    notifyListeners(); 
+  }
 
-  void saveToFile(AppModel app) {
-    if (app.savedPath != null && File(app.savedPath!).existsSync()) {
-      Share.shareXFiles([XFile(app.savedPath!)]);
+  void pauseDownload(AppModel app) {
+    _downloadService.pauseDownload(app);
+    notifyListeners();
+  }
+
+  void cancelDownload(AppModel app) async {
+    await _downloadService.cancelDownload(app);
+    notifyListeners(); 
+  }
+
+  // >>> هنا التعديل الجذري لحل مشكلة الحفظ الخاطئ <<<
+  Future<void> saveToFile(AppModel app) async {
+    // جلب المسار الفعلي من السيرفس للتأكد 100% أنه التطبيق الصحيح
+    final actualPath = await _downloadService.getFilePath(app.name);
+    if (File(actualPath).existsSync()) {
+      // فتح نافذة المشاركة ومكتوب فيها اسم التطبيق عشان تطمن
+      Share.shareXFiles([XFile(actualPath)], text: 'Save ${app.name}');
+    } else if (app.savedPath != null && File(app.savedPath!).existsSync()) {
+      Share.shareXFiles([XFile(app.savedPath!)], text: 'Save ${app.name}');
     }
   }
 
@@ -300,9 +323,9 @@ class _AppleBouncingButtonState extends State<AppleBouncingButton> {
       onTapCancel: _handleTapCancel,
       behavior: HitTestBehavior.opaque,
       child: AnimatedScale(
-        scale: _isPressed ? 0.95 : 1.0,
-        duration: const Duration(milliseconds: 100),
-        curve: Curves.easeInOut,
+        scale: _isPressed ? 0.94 : 1.0,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOutCubic,
         child: widget.child,
       ),
     );
@@ -341,18 +364,14 @@ class _MyAppState extends State<MyApp> {
         scaffoldBackgroundColor: const Color(0xFFF2F2F7),
         cardColor: Colors.white,
         primaryColor: const Color(0xFF0A84FF),
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
       ),
 
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         fontFamily: ".SF Pro Text",
-        scaffoldBackgroundColor: Colors.black,
-        cardColor: const Color(0xFF1C1C1E),
+        scaffoldBackgroundColor: Colors.black, 
+        cardColor: const Color(0xFF151515), 
         primaryColor: const Color(0xFF0A84FF),
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
       ),
 
       home: StoreScreen(
@@ -407,114 +426,173 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            return Column(
-              children: [
-                _buildHeader(),
-                _buildTabs(),
-                Expanded(child: _buildBody()),
-              ],
-            );
-          },
+      extendBody: true, 
+      body: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) {
+          return Stack(
+            children: [
+              TabBarView(
+                controller: _tabController,
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  _buildTabContent(_controller.filteredApps, isMyAppsTab: false),
+                  _buildTabContent(_controller.allApps.where((a) => a.isFavoriteNotifier.value).toList(), isMyAppsTab: false),
+                  _buildTabContent(_controller.allApps.where((a) => a.stateNotifier.value != DownloadState.none).toList(), isMyAppsTab: true),
+                ],
+              ),
+              
+              Positioned(
+                top: 0, left: 0, right: 0,
+                child: _buildGlassHeader(),
+              ),
+
+              Positioned(
+                bottom: 30, left: 40, right: 40,
+                child: _buildFloatingBottomNav(),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildGlassHeader() {
+    return ClipRRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+        child: Container(
+          color: widget.isDark ? Colors.black.withOpacity(0.55) : Colors.white.withOpacity(0.55),
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 10, 
+            bottom: 15, left: 24, right: 24
+          ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: !_isSearching
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      AppleBouncingButton(
+                        onTap: widget.onThemeToggle,
+                        child: Icon(
+                          widget.isDark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill,
+                          color: widget.isDark ? Colors.amber : const Color(0xFF0A84FF),
+                          size: 26,
+                        ),
+                      ),
+                      Text("Store", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color)),
+                      AppleBouncingButton(
+                        onTap: () => setState(() => _isSearching = true),
+                        child: const CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Color(0xFF0A84FF),
+                          child: Icon(CupertinoIcons.search, color: Colors.white, size: 18),
+                        ),
+                      ),
+                    ],
+                  )
+                : CupertinoSearchTextField(
+                    controller: _searchController,
+                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+                    backgroundColor: widget.isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
+                    placeholder: "Search apps...",
+                    onChanged: _controller.searchApps,
+                    onSuffixTap: () {
+                      _searchController.clear(); 
+                      _controller.searchApps(''); 
+                      setState(() => _isSearching = false);
+                    },
+                  ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (!_isSearching)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: AppleBouncingButton(
-                onTap: widget.onThemeToggle,
-                child: Icon(
-                  widget.isDark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill,
-                  color: widget.isDark ? Colors.amber : const Color(0xFF0A84FF),
-                  size: 26,
-                ),
-              ),
-            ),
-            
-          if (!_isSearching)
-            Text("Store", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color)),
-            
-          if (!_isSearching)
-            Align(
-              alignment: Alignment.centerRight,
-              child: AppleBouncingButton(
-                onTap: () => setState(() => _isSearching = true),
-                child: const CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Color(0xFF0A84FF),
-                  child: Icon(CupertinoIcons.search, color: Colors.white, size: 20),
-                ),
-              ),
-            ),
-
-          if (_isSearching)
-            CupertinoSearchTextField(
-              controller: _searchController,
-              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-              backgroundColor: Theme.of(context).cardColor,
-              placeholder: "Search apps...",
-              onChanged: _controller.searchApps,
-              onSuffixTap: () {
-                _searchController.clear(); 
-                _controller.searchApps(''); 
-                setState(() => _isSearching = false);
-              },
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabs() {
-    return TabBar(
-      controller: _tabController,
-      indicatorColor: const Color(0xFF0A84FF),
-      labelColor: Theme.of(context).textTheme.bodyLarge?.color,
-      unselectedLabelColor: Colors.grey,
-      indicatorSize: TabBarIndicatorSize.tab,
-      indicatorWeight: 2,
-      dividerColor: Colors.transparent,
-      // هذا السطر يمنع ظهور الدائرة الرمادية (تأثير الأندرويد) عند الضغط
-      overlayColor: MaterialStateProperty.all(Colors.transparent),
-      tabs: const [ Tab(text: "Apps"), Tab(text: "Favorites"), Tab(text: "Downloads") ],
-    );
-  }
-
-  Widget _buildBody() {
+  Widget _buildTabContent(List<AppModel> list, {required bool isMyAppsTab}) {
     if (_controller.isLoading) return const Center(child: CupertinoActivityIndicator(radius: 15));
-    if (_controller.errorMessage.isNotEmpty) return Center(child: Text(_controller.errorMessage, style: const TextStyle(color: Colors.red)));
-
-    return TabBarView(
-      controller: _tabController,
-      physics: const BouncingScrollPhysics(),
-      children: [
-        buildList(_controller.filteredApps, isMyAppsTab: false),
-        buildList(_controller.allApps.where((a) => a.isFavoriteNotifier.value).toList(), isMyAppsTab: false),
-        buildList(_controller.allApps.where((a) => a.stateNotifier.value == DownloadState.downloaded).toList(), isMyAppsTab: true),
+    
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        const SliverPadding(padding: EdgeInsets.only(top: 100)),
+        CupertinoSliverRefreshControl(
+          onRefresh: _controller.refreshApps,
+        ),
+        if (list.isEmpty)
+          SliverFillRemaining(
+            child: Center(child: Text("Empty here.", style: TextStyle(color: Colors.grey[600], fontSize: 16))),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 130), 
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  final app = list[i];
+                  // >>> مفتاح الحل: إضافة Key يعتمد على اسم التطبيق عشان فلاتر ما يلخبط بينهم <<<
+                  return KeyedSubtree(
+                    key: ValueKey(app.name),
+                    child: _buildAnimatedCard(app, isMyAppsTab),
+                  );
+                },
+                childCount: list.length,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  Widget buildList(List<AppModel> list, {required bool isMyAppsTab}) {
-    if (list.isEmpty) return Center(child: Text("Empty here.", style: TextStyle(color: Colors.grey[600], fontSize: 16)));
-    
-    return ListView.builder(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(top: 10, bottom: 20),
-      itemCount: list.length,
-      itemBuilder: (_, i) => _buildAnimatedCard(list[i], isMyAppsTab),
+  Widget _buildFloatingBottomNav() {
+    return AnimatedBuilder(
+      animation: _tabController,
+      builder: (context, child) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              height: 65,
+              decoration: BoxDecoration(
+                color: widget.isDark ? Colors.black.withOpacity(0.6) : Colors.white.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(40),
+                border: Border.all(color: widget.isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), width: 1),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _navItem(0, CupertinoIcons.square_grid_2x2_fill, CupertinoIcons.square_grid_2x2),
+                  _navItem(1, CupertinoIcons.heart_fill, CupertinoIcons.heart),
+                  _navItem(2, CupertinoIcons.folder_fill, CupertinoIcons.folder),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+    );
+  }
+
+  Widget _navItem(int index, IconData activeIcon, IconData inactiveIcon) {
+    bool isActive = _tabController.index == index;
+    return AppleBouncingButton(
+      onTap: () => _tabController.animateTo(index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isActive ? const Color(0xFF0A84FF).withOpacity(0.15) : Colors.transparent,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          isActive ? activeIcon : inactiveIcon,
+          color: isActive ? const Color(0xFF0A84FF) : Colors.grey,
+          size: 24,
+        ),
+      ),
     );
   }
 
@@ -526,19 +604,20 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
 
         return AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
+          curve: Curves.easeOutCubic,
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(16),
+            color: Theme.of(context).cardColor.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: widget.isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.04)),
             boxShadow: widget.isDark ? [] : [
-              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 20, offset: const Offset(0, 10))
             ],
           ),
           child: AnimatedSize(
             duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
+            curve: Curves.easeOutCubic,
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               child: isDownloadingOrPaused
@@ -557,7 +636,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         _buildAppIcon(app),
-        const SizedBox(width: 14),
+        const SizedBox(width: 16),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -572,14 +651,15 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
         Row(
           children: [
             if (isMyAppsTab)
-              _featherButton(text: "Save", onTap: () => _controller.saveToFile(app))
+              // زر حفظ معدل (أخضر داكن) لتمييزه 
+              _featherButton(text: "Save", icon: CupertinoIcons.arrow_down_doc_fill, bgColor: const Color(0xFF1E3A28), textColor: const Color(0xFF34C759), onTap: () => _controller.saveToFile(app))
             else if (state == DownloadState.downloaded)
               _featherButton(text: "Installed", bgColor: widget.isDark ? Colors.grey[800] : Colors.grey[300], textColor: Colors.grey, onTap: () {})
             else
               _featherButton(text: "Install", onTap: () => _controller.startDownload(app)),
               
             if (!isMyAppsTab) ...[
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
               ValueListenableBuilder<bool>(
                 valueListenable: app.isFavoriteNotifier,
                 builder: (context, isFavorite, child) {
@@ -587,8 +667,8 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                     onTap: () => _controller.toggleFavorite(app),
                     child: Icon(
                       isFavorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
-                      color: isFavorite ? Colors.pink : Colors.grey,
-                      size: 26,
+                      color: isFavorite ? const Color(0xFFFF2D55) : Colors.grey,
+                      size: 24,
                     ),
                   );
                 },
@@ -609,7 +689,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildAppIcon(app),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -623,9 +703,9 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                   ),
                   const SizedBox(height: 12),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(6),
                     child: LinearProgressIndicator(
-                      value: progress, minHeight: 4,
+                      value: progress, minHeight: 6,
                       backgroundColor: widget.isDark ? Colors.grey[800] : Colors.grey[300],
                       valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0A84FF)),
                     ),
@@ -637,7 +717,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
                     children: [
                       Expanded(child: _featherButton(text: state == DownloadState.paused ? "Resume" : "Pause", onTap: () => state == DownloadState.paused ? _controller.startDownload(app) : _controller.pauseDownload(app))),
                       const SizedBox(width: 12),
-                      Expanded(child: _featherButton(text: "Cancel", onTap: () => _controller.cancelDownload(app))),
+                      Expanded(child: _featherButton(text: "Cancel", onTap: () => _controller.cancelDownload(app), bgColor: widget.isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), textColor: Colors.red)),
                     ],
                   ),
                 ],
@@ -653,20 +733,20 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
     return AppleBouncingButton(
       onTap: () {}, 
       child: SizedBox(
-        width: 60, height: 60,
+        width: 64, height: 64,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           child: CachedNetworkImage(
             imageUrl: app.icon, fit: BoxFit.cover,
-            placeholder: (context, url) => Container(color: Colors.grey[900]),
-            errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
+            placeholder: (context, url) => Container(color: widget.isDark ? Colors.grey[900] : Colors.grey[200]),
+            errorWidget: (context, url, error) => const Icon(CupertinoIcons.exclamationmark_triangle, color: Colors.grey),
           ),
         ),
       ),
     );
   }
 
-  Widget _featherButton({required String text, required VoidCallback onTap, Color? bgColor, Color? textColor}) {
+  Widget _featherButton({required String text, IconData? icon, required VoidCallback onTap, Color? bgColor, Color? textColor}) {
     return AppleBouncingButton(
       onTap: onTap,
       child: Container(
@@ -674,12 +754,22 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: bgColor ?? const Color(0xFF0A84FF),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12), 
         ),
-        child: Text(
-          text,
-          style: TextStyle(color: textColor ?? Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
-          maxLines: 1,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: textColor ?? Colors.white, size: 16),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              text,
+              style: TextStyle(color: textColor ?? Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+              maxLines: 1,
+            ),
+          ],
         ),
       ),
     );
