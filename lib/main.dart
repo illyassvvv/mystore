@@ -731,7 +731,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   child: const Text('فتح', style: TextStyle(color: Colors.white, fontSize: 14, fontFamily: 'Tajawal', fontWeight: FontWeight.bold)),
                 )
               else if (!app.isDownloading)
-                // زر الايفون الأصلي للتثبيت
+                // زر اايفون الأصلي للتثبيت
                 CupertinoButton(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
                   color: isDark ? const Color(0xFF424250) : const Color(0xFFE0E0E0),
