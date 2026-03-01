@@ -13,44 +13,25 @@ void main() async {
   runApp(const MyApp());
 }
 
-/// ================= APP =================
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+/// ==========================================
+/// 1. MODELS
+/// ==========================================
+enum DownloadState { none, downloading, paused, downloaded }
 
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Vargas Store',
-      debugShowCheckedModeBanner: false,
-      themeMode: ThemeMode.dark,
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        fontFamily: ".SF Pro Text",
-        scaffoldBackgroundColor: Colors.black,
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-      ),
-      home: const StoreScreen(),
-    );
-  }
-}
-
-/// ================= MODEL =================
 class AppModel {
-  String name;
-  String version;
-  String size;
-  String icon;
-  String url;
+  final String name;
+  final String version;
+  final String size;
+  final String icon;
+  final String url;
 
-  bool downloading = false;
-  bool isPaused = false;
-  bool downloaded = false;
-  bool isFavorite = false; // إضافة حالة المفضلة
-  double progress = 0;
+  // ValueNotifiers لمنع الـ setState العشوائي وتحديث أجزاء محددة فقط
+  final ValueNotifier<DownloadState> stateNotifier;
+  final ValueNotifier<double> progressNotifier;
+  final ValueNotifier<bool> isFavoriteNotifier;
 
-  String? path;
-  CancelToken? token;
+  String? savedPath;
+  CancelToken? cancelToken;
 
   AppModel({
     required this.name,
@@ -58,7 +39,9 @@ class AppModel {
     required this.size,
     required this.icon,
     required this.url,
-  });
+  })  : stateNotifier = ValueNotifier(DownloadState.none),
+        progressNotifier = ValueNotifier(0.0),
+        isFavoriteNotifier = ValueNotifier(false);
 
   factory AppModel.fromJson(Map<String, dynamic> json) {
     return AppModel(
@@ -69,135 +52,57 @@ class AppModel {
       url: json['url'] ?? '',
     );
   }
+
+  // تنظيف الذاكرة
+  void dispose() {
+    stateNotifier.dispose();
+    progressNotifier.dispose();
+    isFavoriteNotifier.dispose();
+  }
 }
 
-/// ================= STORE =================
-class StoreScreen extends StatefulWidget {
-  const StoreScreen({super.key});
+/// ==========================================
+/// 2. SERVICES (Download Logic)
+/// ==========================================
+class DownloadService {
+  final Dio _dio = Dio();
 
-  @override
-  State<StoreScreen> createState() => _StoreScreenState();
-}
-
-class _StoreScreenState extends State<StoreScreen> {
-  final Dio dio = Dio();
-  int tab = 0; // 0: Store, 1: Favorites, 2: Downloads
-  bool isLoadingData = true;
-  String errorMessage = '';
-
-  bool _isSearching = false;
-  final TextEditingController _searchController = TextEditingController();
-
-  List<AppModel> apps = [];
-  List<AppModel> _filteredApps = [];
-  List<AppModel> downloaded = [];
-
-  final String jsonUrl = "https://raw.githubusercontent.com/illyassvv-alt/MyApps/main/apps.json";
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchAppsFromGithub();
-  }
-
-  Future<void> _fetchAppsFromGithub() async {
-    try {
-      final response = await dio.get(jsonUrl);
-      List<dynamic> data = response.data is String ? jsonDecode(response.data) : response.data;
-      
-      setState(() {
-        apps = data.map((e) => AppModel.fromJson(e)).toList();
-        _filteredApps = apps;
-      });
-
-      await _loadSavedData();
-    } catch (e) {
-      setState(() {
-        errorMessage = "Failed to load apps. Check your internet.";
-        isLoadingData = false;
-      });
+  // الحصول على مسار تخزين آمن لا يحذفه النظام
+  Future<Directory> _getSecureAppsDirectory() async {
+    final dir = await getApplicationSupportDirectory();
+    final appsDir = Directory('${dir.path}/apps');
+    if (!await appsDir.exists()) {
+      await appsDir.create(recursive: true);
     }
+    return appsDir;
   }
 
-  // تحميل البيانات المحفوظة (التطبيقات المحملة + المفضلة)
-  Future<void> _loadSavedData() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    downloaded.clear();
-
-    for (var app in apps) {
-      // 1. فحص التحميلات
-      String? savedPath = prefs.getString('path_${app.name}');
-      if (savedPath != null && File(savedPath).existsSync()) {
-        app.downloaded = true;
-        app.path = savedPath;
-        downloaded.add(app);
-      }
-
-      // 2. فحص المفضلة
-      bool isFav = prefs.getBool('fav_${app.name}') ?? false;
-      app.isFavorite = isFav;
-    }
-    
-    setState(() {
-      isLoadingData = false;
-    });
-  }
-
-  void _filterApps(String query) {
-    if (query.isEmpty) {
-      setState(() => _filteredApps = apps);
-    } else {
-      setState(() {
-        _filteredApps = apps
-            .where((app) => app.name.toLowerCase().contains(query.toLowerCase()))
-            .toList();
-      });
-    }
-  }
-
-  // زر المفضلة (حفظ وتبديل)
-  void _toggleFavorite(AppModel app) async {
-    setState(() {
-      app.isFavorite = !app.isFavorite;
-    });
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('fav_${app.name}', app.isFavorite);
-  }
-
-  /// ================= DOWNLOAD WITH RESUME LOGIC =================
-  Future downloadApp(AppModel app) async {
-    app.token = CancelToken();
-
-    setState(() {
-      app.downloading = true;
-      app.isPaused = false;
-    });
+  Future<void> startOrResumeDownload(AppModel app) async {
+    app.cancelToken = CancelToken();
+    app.stateNotifier.value = DownloadState.downloading;
 
     try {
-      final dir = await getTemporaryDirectory();
-      final path = "${dir.path}/${app.name}.ipa";
-      final file = File(path);
+      final dir = await _getSecureAppsDirectory();
+      final filePath = "${dir.path}/${app.name}.ipa";
+      final file = File(filePath);
 
       int downloadedBytes = 0;
-      
-      // إذا كان مكتملاً سابقاً وأعاد المستخدم تحميله
-      if (app.progress == 1.0 || app.progress == 0.0) {
+
+      if (app.progressNotifier.value == 1.0 || app.progressNotifier.value == 0.0) {
         if (file.existsSync()) file.deleteSync();
-        app.progress = 0;
+        app.progressNotifier.value = 0.0;
       } else if (file.existsSync()) {
-        // قراءة كم بايت تم تحميله مسبقاً لاستئناف التحميل
         downloadedBytes = file.lengthSync();
       }
 
-      final response = await dio.get(
+      final response = await _dio.get(
         app.url,
         options: Options(
           responseType: ResponseType.stream,
           followRedirects: true,
-          // إرسال هيدر Range لإكمال التحميل من حيث توقف
           headers: downloadedBytes > 0 ? {'range': 'bytes=$downloadedBytes-'} : {},
         ),
-        cancelToken: app.token,
+        cancelToken: app.cancelToken,
       );
 
       int totalBytes = downloadedBytes;
@@ -209,9 +114,8 @@ class _StoreScreenState extends State<StoreScreen> {
         totalBytes += int.parse(response.headers.value('content-length') ?? '0');
       }
 
-      // إذا كان السيرفر لا يدعم الـ Range، سيعود بـ 200 ونبدأ من الصفر
       RandomAccessFile raf;
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         downloadedBytes = 0;
         raf = file.openSync(mode: FileMode.write);
       } else {
@@ -219,413 +123,566 @@ class _StoreScreenState extends State<StoreScreen> {
       }
 
       final stream = response.data.stream as Stream<List<int>>;
+      int lastUpdate = 0;
 
       try {
         await for (var chunk in stream) {
           raf.writeFromSync(chunk);
           downloadedBytes += chunk.length;
-          setState(() {
-            app.progress = downloadedBytes / totalBytes;
-          });
+
+          // Throttling: تحديث الـ UI كل 150 ملي ثانية فقط لرفع الأداء
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if (now - lastUpdate > 150 || downloadedBytes == totalBytes) {
+            lastUpdate = now;
+            app.progressNotifier.value = downloadedBytes / totalBytes;
+          }
         }
         raf.closeSync();
 
-        // اكتمل التحميل
-        SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('path_${app.name}', path);
-
-        setState(() {
-          app.downloading = false;
-          app.isPaused = false;
-          app.downloaded = true;
-          app.path = path;
-          if (!downloaded.contains(app)) downloaded.add(app);
-        });
+        app.savedPath = filePath;
+        app.stateNotifier.value = DownloadState.downloaded;
       } catch (e) {
         raf.closeSync();
-        rethrow; // تمرير الخطأ لـ catch الخارجية
+        rethrow;
       }
     } catch (e) {
       if (e is DioException && CancelToken.isCancel(e)) {
-        // تم الإيقاف المؤقت بواسطة المستخدم، لا تفعل شيئاً سوى إيقاف الحالة
+        // تم الإيقاف المؤقت
       } else {
-        // خطأ حقيقي (انقطاع نت وغيرها)
-        setState(() {
-          app.downloading = false;
-          app.isPaused = false;
-          app.progress = 0;
-        });
+        app.stateNotifier.value = DownloadState.none;
+        app.progressNotifier.value = 0.0;
       }
     }
   }
 
   void pauseDownload(AppModel app) {
-    app.token?.cancel("paused");
-    setState(() {
-      app.isPaused = true;
-    });
+    app.cancelToken?.cancel("paused");
+    app.stateNotifier.value = DownloadState.paused;
   }
 
-  void cancelDownload(AppModel app) {
-    app.token?.cancel("cancelled");
-    setState(() {
-      app.downloading = false;
-      app.isPaused = false;
-      app.progress = 0;
+  Future<void> cancelDownload(AppModel app) async {
+    app.cancelToken?.cancel("cancelled");
+    app.stateNotifier.value = DownloadState.none;
+    app.progressNotifier.value = 0.0;
+
+    final dir = await _getSecureAppsDirectory();
+    final file = File("${dir.path}/${app.name}.ipa");
+    if (file.existsSync()) {
+      file.deleteSync();
+    }
+    app.savedPath = null;
+  }
+
+  Future<bool> isFileExists(String fileName) async {
+    final dir = await _getSecureAppsDirectory();
+    final file = File("${dir.path}/$fileName.ipa");
+    return file.existsSync();
+  }
+
+  Future<String> getFilePath(String fileName) async {
+    final dir = await _getSecureAppsDirectory();
+    return "${dir.path}/$fileName.ipa";
+  }
+}
+
+/// ==========================================
+/// 3. CONTROLLERS
+/// ==========================================
+class StoreController extends ChangeNotifier {
+  final DownloadService _downloadService = DownloadService();
+  final String _jsonUrl = "https://raw.githubusercontent.com/illyassvv-alt/MyApps/main/apps.json";
+  
+  List<AppModel> allApps = [];
+  List<AppModel> filteredApps = [];
+  
+  bool isLoading = true;
+  String errorMessage = '';
+
+  Future<void> initStore() async {
+    try {
+      final dio = Dio();
+      final response = await dio.get(_jsonUrl);
+      List<dynamic> data = response.data is String ? jsonDecode(response.data) : response.data;
       
-      // حذف الملف غير المكتمل لتنظيف المساحة
-      final path = app.path;
-      if (path != null && File(path).existsSync()) {
-        File(path).deleteSync();
-      }
-    });
-  }
-
-  void saveToFile(AppModel app) {
-    if (app.path != null && File(app.path!).existsSync()) {
-      Share.shareXFiles([XFile(app.path!)]);
+      allApps = data.map((e) => AppModel.fromJson(e)).toList();
+      filteredApps = allApps;
+      
+      await _loadSavedPreferences();
+      
+      isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      errorMessage = "Failed to load apps. Check your internet connection.";
+      isLoading = false;
+      notifyListeners();
     }
   }
 
-  /// ================= UI =================
+  Future<void> _loadSavedPreferences() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    
+    for (var app in allApps) {
+      app.isFavoriteNotifier.value = prefs.getBool('fav_${app.name}') ?? false;
+      
+      final path = await _downloadService.getFilePath(app.name);
+      final exists = await _downloadService.isFileExists(app.name);
+      
+      if (exists) {
+        app.savedPath = path;
+        app.stateNotifier.value = DownloadState.downloaded;
+      }
+    }
+  }
+
+  void searchApps(String query) {
+    if (query.isEmpty) {
+      filteredApps = allApps;
+    } else {
+      filteredApps = allApps
+          .where((app) => app.name.toLowerCase().contains(query.toLowerCase()))
+          .toList();
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleFavorite(AppModel app) async {
+    app.isFavoriteNotifier.value = !app.isFavoriteNotifier.value;
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('fav_${app.name}', app.isFavoriteNotifier.value);
+  }
+
+  void startDownload(AppModel app) => _downloadService.startOrResumeDownload(app);
+  void pauseDownload(AppModel app) => _downloadService.pauseDownload(app);
+  void cancelDownload(AppModel app) => _downloadService.cancelDownload(app);
+
+  void saveToFile(AppModel app) {
+    if (app.savedPath != null && File(app.savedPath!).existsSync()) {
+      Share.shareXFiles([XFile(app.savedPath!)]);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (var app in allApps) {
+      app.dispose();
+    }
+    super.dispose();
+  }
+}
+
+/// ==========================================
+/// 4. UI WIDGETS
+/// ==========================================
+class AppleBouncingButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const AppleBouncingButton({super.key, required this.child, required this.onTap});
+
+  @override
+  State<AppleBouncingButton> createState() => _AppleBouncingButtonState();
+}
+
+class _AppleBouncingButtonState extends State<AppleBouncingButton> {
+  bool _isPressed = false;
+
+  void _handleTapDown(TapDownDetails details) => setState(() => _isPressed = true);
+  void _handleTapUp(TapUpDetails details) {
+    setState(() => _isPressed = false);
+    widget.onTap();
+  }
+  void _handleTapCancel() => setState(() => _isPressed = false);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: _handleTapDown,
+      onTapUp: _handleTapUp,
+      onTapCancel: _handleTapCancel,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.95 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeInOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// ==========================================
+/// 5. MAIN APP & SCREENS
+/// ==========================================
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.dark;
+
+  void toggleTheme() {
+    setState(() {
+      _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Vargas Store',
+      debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
+      
+      theme: ThemeData(
+        brightness: Brightness.light,
+        fontFamily: ".SF Pro Text",
+        scaffoldBackgroundColor: const Color(0xFFF2F2F7),
+        cardColor: Colors.white,
+        primaryColor: const Color(0xFF0A84FF),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+      ),
+
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        fontFamily: ".SF Pro Text",
+        scaffoldBackgroundColor: Colors.black,
+        cardColor: const Color(0xFF1C1C1E),
+        primaryColor: const Color(0xFF0A84FF),
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+      ),
+
+      home: StoreScreen(
+        onThemeToggle: toggleTheme,
+        isDark: _themeMode == ThemeMode.dark,
+      ),
+    );
+  }
+}
+
+class StoreScreen extends StatefulWidget {
+  final VoidCallback onThemeToggle;
+  final bool isDark;
+
+  const StoreScreen({super.key, required this.onThemeToggle, required this.isDark});
+
+  @override
+  State<StoreScreen> createState() => _StoreScreenState();
+}
+
+class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStateMixin {
+  final StoreController _controller = StoreController();
+  late TabController _tabController;
+  
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      if (_isSearching) {
+        setState(() {
+          _isSearching = false;
+          _searchController.clear();
+          _controller.searchApps('');
+        });
+      }
+    });
+    _controller.initStore();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _searchController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: _buildBody(),
-            ),
-          ],
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, child) {
+            return Column(
+              children: [
+                _buildHeader(),
+                _buildTabs(),
+                Expanded(child: _buildBody()),
+              ],
+            );
+          },
         ),
       ),
-      bottomNavigationBar: buildBottomBar(),
     );
   }
 
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
           if (!_isSearching)
-            Text(
-              tab == 0 ? "Store" : tab == 1 ? "Favorites" : "Downloads",
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
-            )
-          else
-            Expanded(
-              child: CupertinoSearchTextField(
-                controller: _searchController,
-                style: const TextStyle(color: Colors.white),
-                backgroundColor: const Color(0xFF1C1C1E),
-                placeholder: "Search apps...",
-                onChanged: _filterApps,
-                onSuffixTap: () {
-                  _searchController.clear();
-                  _filterApps('');
-                  setState(() => _isSearching = false);
-                },
+            Align(
+              alignment: Alignment.centerLeft,
+              child: AppleBouncingButton(
+                onTap: widget.onThemeToggle,
+                child: Icon(
+                  widget.isDark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill,
+                  color: widget.isDark ? Colors.amber : const Color(0xFF0A84FF),
+                  size: 26,
+                ),
               ),
             ),
-          
-          if (!_isSearching && tab == 0) // زر البحث يظهر فقط في الرئيسية
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: const Color(0xFF0A84FF),
-              child: IconButton(
-                icon: const Icon(Icons.search, color: Colors.white, size: 20),
-                onPressed: () {
-                  setState(() => _isSearching = true);
-                },
+            
+          if (!_isSearching)
+            Text("Store", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color)),
+            
+          if (!_isSearching)
+            Align(
+              alignment: Alignment.centerRight,
+              child: AppleBouncingButton(
+                onTap: () => setState(() => _isSearching = true),
+                child: const CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Color(0xFF0A84FF),
+                  child: Icon(CupertinoIcons.search, color: Colors.white, size: 20),
+                ),
               ),
+            ),
+
+          if (_isSearching)
+            CupertinoSearchTextField(
+              controller: _searchController,
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              backgroundColor: Theme.of(context).cardColor,
+              placeholder: "Search apps...",
+              onChanged: _controller.searchApps,
+              onSuffixTap: () {
+                _searchController.clear(); 
+                _controller.searchApps(''); 
+                setState(() => _isSearching = false);
+              },
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildTabs() {
+    return TabBar(
+      controller: _tabController,
+      indicatorColor: const Color(0xFF0A84FF),
+      labelColor: Theme.of(context).textTheme.bodyLarge?.color,
+      unselectedLabelColor: Colors.grey,
+      indicatorSize: TabBarIndicatorSize.tab,
+      indicatorWeight: 2,
+      dividerColor: Colors.transparent,
+      tabs: const [ Tab(text: "Apps"), Tab(text: "Favorites"), Tab(text: "Downloads") ],
     );
   }
 
   Widget _buildBody() {
-    if (isLoadingData) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF0A84FF)));
-    }
-    if (errorMessage.isNotEmpty) {
-      return Center(child: Text(errorMessage, style: const TextStyle(color: Colors.red)));
-    }
+    if (_controller.isLoading) return const Center(child: CupertinoActivityIndicator(radius: 15));
+    if (_controller.errorMessage.isNotEmpty) return Center(child: Text(_controller.errorMessage, style: const TextStyle(color: Colors.red)));
 
-    List<AppModel> currentList = [];
-    String emptyMessage = "";
-
-    if (tab == 0) {
-      currentList = _filteredApps;
-      emptyMessage = "No apps found.";
-    } else if (tab == 1) {
-      currentList = apps.where((a) => a.isFavorite).toList();
-      emptyMessage = "No favorites yet.";
-    } else if (tab == 2) {
-      currentList = downloaded;
-      emptyMessage = "No downloaded apps yet.";
-    }
-
-    if (currentList.isEmpty) {
-      return Center(
-        child: Text(emptyMessage, style: TextStyle(color: Colors.grey[600], fontSize: 16)),
-      );
-    }
-
-    return ListView.builder(
+    return TabBarView(
+      controller: _tabController,
       physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.only(top: 10, bottom: 20),
-      itemCount: currentList.length,
-      itemBuilder: (_, i) => appTile(currentList[i], tab == 2),
-    );
-  }
-
-  // تصميم البطاقة الأصغر والأجمل (مع زر المفضلة)
-  Widget appTile(AppModel app, bool isMyAppsTab) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(12), // تصغير الـ padding
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start, // جعل العناصر تبدأ من الأعلى
-        children: [
-          // لوغو صغير
-          SizedBox(
-            width: 55, // تصغير الأيقونة
-            height: 55,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: CachedNetworkImage(
-                imageUrl: app.icon,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => Container(color: Colors.black12),
-                errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          
-          // تفاصيل التطبيق
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  app.name,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  "Updated recently",
-                  style: TextStyle(color: Colors.grey[500], fontSize: 11),
-                ),
-                const SizedBox(height: 6),
-                
-                // أيقونات الحجم والإصدار
-                Row(
-                  children: [
-                    Icon(Icons.download_rounded, size: 12, color: Colors.grey[500]),
-                    const SizedBox(width: 2),
-                    Text(app.size, style: TextStyle(color: Colors.grey[500], fontSize: 11)),
-                    const SizedBox(width: 10),
-                    Icon(Icons.confirmation_number_outlined, size: 12, color: Colors.grey[500]),
-                    const SizedBox(width: 2),
-                    Text("v${app.version}", style: TextStyle(color: Colors.grey[500], fontSize: 11)),
-                  ],
-                ),
-                
-                // شريط التحميل (يظهر إذا كان يحمل أو متوقف)
-                if (app.downloading || app.isPaused) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: app.progress,
-                            minHeight: 4,
-                            backgroundColor: Colors.grey[800],
-                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0A84FF)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "${(app.progress * 100).toInt()}%",
-                        style: TextStyle(color: Colors.grey[400], fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDownloadControls(app),
-                ],
-              ],
-            ),
-          ),
-          
-          const SizedBox(width: 8),
-
-          // الأزرار على اليمين (المفضلة فوق، وزر التحميل تحت)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              GestureDetector(
-                onTap: () => _toggleFavorite(app),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8.0, right: 4.0),
-                  child: Icon(
-                    app.isFavorite ? Icons.favorite : Icons.favorite_border,
-                    color: app.isFavorite ? const Color(0xFFFF4081) : Colors.grey[600],
-                    size: 22,
-                  ),
-                ),
-              ),
-              if (!app.downloading && !app.isPaused) buildButton(app, isMyAppsTab),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDownloadControls(AppModel app) {
-    return Row(
       children: [
-        Expanded(
-          child: _customButton(
-            text: app.isPaused ? "Resume" : "Pause",
-            bgColor: const Color(0xFF142845),
-            textColor: const Color(0xFF0A84FF),
-            onTap: () {
-              if (app.isPaused) {
-                downloadApp(app);
-              } else {
-                pauseDownload(app);
-              }
-            },
-          ),
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: _customButton(
-            text: "Cancel",
-            bgColor: const Color(0xFF3B1A1A),
-            textColor: const Color(0xFFF44336),
-            onTap: () => cancelDownload(app),
-          ),
-        ),
+        buildList(_controller.filteredApps, isMyAppsTab: false),
+        buildList(_controller.allApps.where((a) => a.isFavoriteNotifier.value).toList(), isMyAppsTab: false),
+        buildList(_controller.allApps.where((a) => a.stateNotifier.value == DownloadState.downloaded).toList(), isMyAppsTab: true),
       ],
     );
   }
 
-  Widget buildButton(AppModel app, bool isMyAppsTab) {
-    if (isMyAppsTab) {
-      return _customButton(
-        text: "Save",
-        bgColor: const Color(0xFF1A3B26),
-        textColor: const Color(0xFF4CAF50),
-        onTap: () => saveToFile(app),
-        icon: Icons.save_alt,
-      );
-    }
-
-    if (app.downloaded) {
-      return const Padding(
-        padding: EdgeInsets.only(right: 6, top: 4),
-        child: Text("Installed", style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.bold)),
-      );
-    }
-
-    return _customButton(
-      text: "GET",
-      bgColor: const Color(0xFF142845),
-      textColor: const Color(0xFF0A84FF),
-      onTap: () => downloadApp(app),
+  Widget buildList(List<AppModel> list, {required bool isMyAppsTab}) {
+    if (list.isEmpty) return Center(child: Text("Empty here.", style: TextStyle(color: Colors.grey[600], fontSize: 16)));
+    
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.only(top: 10, bottom: 20),
+      itemCount: list.length,
+      itemBuilder: (_, i) => _buildAnimatedCard(list[i], isMyAppsTab),
     );
   }
 
-  Widget _customButton({required String text, required Color bgColor, required Color textColor, required VoidCallback onTap, IconData? icon}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6), // أزرار أصغر قليلاً
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: textColor, size: 14),
-              const SizedBox(width: 4),
+  Widget _buildAnimatedCard(AppModel app, bool isMyAppsTab) {
+    // الاستماع لحالة التطبيق فقط (لإعادة البناء محلياً وليس الشاشة كلها)
+    return ValueListenableBuilder<DownloadState>(
+      valueListenable: app.stateNotifier,
+      builder: (context, state, child) {
+        bool isDownloadingOrPaused = state == DownloadState.downloading || state == DownloadState.paused;
+
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: widget.isDark ? [] : [
+              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))
             ],
-            Text(
-              text,
-              style: TextStyle(color: textColor, fontSize: 13, fontWeight: FontWeight.bold),
-              maxLines: 1,
+          ),
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              child: isDownloadingOrPaused
+                  ? _buildDownloadingLayout(app, state)
+                  : _buildNormalLayout(app, state, isMyAppsTab),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNormalLayout(AppModel app, DownloadState state, bool isMyAppsTab) {
+    return Row(
+      key: ValueKey('${app.name}_nr'),
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        _buildAppIcon(app),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(app.name, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color), maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 4),
+              Text("Version ${app.version} • ${app.size}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        Row(
+          children: [
+            if (isMyAppsTab)
+              _featherButton(text: "Save", onTap: () => _controller.saveToFile(app))
+            else if (state == DownloadState.downloaded)
+              _featherButton(text: "Installed", bgColor: widget.isDark ? Colors.grey[800] : Colors.grey[300], textColor: Colors.grey, onTap: () {})
+            else
+              _featherButton(text: "Install", onTap: () => _controller.startDownload(app)),
+              
+            if (!isMyAppsTab) ...[
+              const SizedBox(width: 12),
+              // استماع خاص لزر المفضلة
+              ValueListenableBuilder<bool>(
+                valueListenable: app.isFavoriteNotifier,
+                builder: (context, isFavorite, child) {
+                  return AppleBouncingButton(
+                    onTap: () => _controller.toggleFavorite(app),
+                    child: Icon(
+                      isFavorite ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+                      color: isFavorite ? Colors.pink : Colors.grey,
+                      size: 26,
+                    ),
+                  );
+                },
+              ),
+            ]
+          ],
+        )
+      ],
+    );
+  }
+
+  Widget _buildDownloadingLayout(AppModel app, DownloadState state) {
+    // استماع خاص لشريط التحميل للحصول على أعلى أداء ممكن
+    return ValueListenableBuilder<double>(
+      key: ValueKey('${app.name}_dl'),
+      valueListenable: app.progressNotifier,
+      builder: (context, progress, child) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildAppIcon(app),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(child: Text(app.name, style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Text("${(progress * 100).toInt()}%", style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color)),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: progress, minHeight: 4,
+                      backgroundColor: widget.isDark ? Colors.grey[800] : Colors.grey[300],
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF0A84FF)),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text("Version ${app.version} • ${app.size}", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(child: _featherButton(text: state == DownloadState.paused ? "Resume" : "Pause", onTap: () => state == DownloadState.paused ? _controller.startDownload(app) : _controller.pauseDownload(app))),
+                      const SizedBox(width: 12),
+                      Expanded(child: _featherButton(text: "Cancel", onTap: () => _controller.cancelDownload(app))),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAppIcon(AppModel app) {
+    return AppleBouncingButton(
+      onTap: () {}, 
+      child: SizedBox(
+        width: 60, height: 60,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: CachedNetworkImage(
+            imageUrl: app.icon, fit: BoxFit.cover,
+            placeholder: (context, url) => Container(color: Colors.grey[900]),
+            errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
+          ),
         ),
       ),
     );
   }
 
-  /// ================= BOTTOM NAV =================
-  Widget buildBottomBar() {
-    return Theme(
-      data: ThemeData(
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-      ),
-      child: BottomNavigationBar(
-        backgroundColor: Colors.black,
-        elevation: 0,
-        type: BottomNavigationBarType.fixed,
-        currentIndex: tab,
-        onTap: (i) {
-          setState(() {
-            tab = i;
-            if (_isSearching) {
-              _isSearching = false;
-              _searchController.clear();
-              _filterApps('');
-            }
-          });
-        },
-        selectedItemColor: const Color(0xFF0A84FF),
-        unselectedItemColor: Colors.grey[700],
-        selectedFontSize: 11,
-        unselectedFontSize: 11,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.grid_view_rounded)),
-            label: "Store",
-          ),
-          BottomNavigationBarItem(
-            icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.favorite_rounded)),
-            label: "Favorites",
-          ),
-          BottomNavigationBarItem(
-            icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.folder_open_rounded)),
-            label: "Downloads",
-          ),
-        ],
+  Widget _featherButton({required String text, required VoidCallback onTap, Color? bgColor, Color? textColor}) {
+    return AppleBouncingButton(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: bgColor ?? const Color(0xFF0A84FF),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(color: textColor ?? Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+          maxLines: 1,
+        ),
       ),
     );
   }
