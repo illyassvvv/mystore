@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -14,41 +13,24 @@ void main() async {
 }
 
 /// ================= APP =================
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
-
-  @override
-  State<MyApp> createState() => _MyAppState();
-}
-
-class _MyAppState extends State<MyApp> {
-  bool dark = true;
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Vargas Store',
       debugShowCheckedModeBanner: false,
-      themeMode: dark ? ThemeMode.dark : ThemeMode.light,
-      
-      theme: ThemeData(
-        brightness: Brightness.light,
-        fontFamily: ".SF Pro Text",
-        scaffoldBackgroundColor: const Color(0xfff2f2f7),
-        cupertinoOverrideTheme: const CupertinoThemeData(brightness: Brightness.light),
-      ),
-
+      // نثبت التطبيق على الوضع الداكن ليتطابق مع التصميم المطلوب
+      themeMode: ThemeMode.dark,
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         fontFamily: ".SF Pro Text",
-        scaffoldBackgroundColor: Colors.black, // خلفية سوداء مثل الايفون
-        cupertinoOverrideTheme: const CupertinoThemeData(brightness: Brightness.dark),
+        scaffoldBackgroundColor: Colors.black, // خلفية سوداء بالكامل
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
       ),
-
-      home: StoreScreen(
-        dark: dark,
-        onChanged: (v) => setState(() => dark = v),
-      ),
+      home: const StoreScreen(),
     );
   }
 }
@@ -76,7 +58,6 @@ class AppModel {
     required this.url,
   });
 
-  // لتحويل بيانات JSON من جيتهاب إلى كود فلاتر
   factory AppModel.fromJson(Map<String, dynamic> json) {
     return AppModel(
       name: json['name'] ?? 'Unknown App',
@@ -90,14 +71,7 @@ class AppModel {
 
 /// ================= STORE =================
 class StoreScreen extends StatefulWidget {
-  final bool dark;
-  final ValueChanged<bool> onChanged;
-
-  const StoreScreen({
-    super.key,
-    required this.dark,
-    required this.onChanged,
-  });
+  const StoreScreen({super.key});
 
   @override
   State<StoreScreen> createState() => _StoreScreenState();
@@ -112,6 +86,7 @@ class _StoreScreenState extends State<StoreScreen> {
   List<AppModel> apps = [];
   List<AppModel> downloaded = [];
 
+  // رابط جيتهاب الخاص بك
   final String jsonUrl = "https://raw.githubusercontent.com/illyassvv-alt/MyApps/main/apps.json";
 
   @override
@@ -120,44 +95,36 @@ class _StoreScreenState extends State<StoreScreen> {
     _fetchAppsFromGithub();
   }
 
-  /// 1. جلب البيانات من ملف json في جيتهاب
   Future<void> _fetchAppsFromGithub() async {
     try {
       final response = await dio.get(jsonUrl);
-      
-      // تحويل النص إلى قائمة بيانات
       List<dynamic> data = response.data is String ? jsonDecode(response.data) : response.data;
       
       setState(() {
         apps = data.map((e) => AppModel.fromJson(e)).toList();
       });
 
-      // بعد جلب التطبيقات، نفحص وش اللي محمل منها سابقاً
       await _loadSavedApps();
-
     } catch (e) {
       setState(() {
-        errorMessage = "Failed to load apps. Check your internet or JSON link.";
+        errorMessage = "Failed to load apps. Check your internet.";
         isLoadingData = false;
       });
     }
   }
 
-  /// 2. فحص التطبيقات المحفوظة في ذاكرة الهاتف
   Future<void> _loadSavedApps() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     downloaded.clear();
 
     for (var app in apps) {
       String? savedPath = prefs.getString('path_${app.name}');
-      
       if (savedPath != null && File(savedPath).existsSync()) {
         app.downloaded = true;
         app.path = savedPath;
         downloaded.add(app);
       }
     }
-    
     setState(() {
       isLoadingData = false;
     });
@@ -189,7 +156,6 @@ class _StoreScreenState extends State<StoreScreen> {
         },
       );
 
-      // حفظ مسار الملف الدائم بعد نجاح التحميل
       SharedPreferences prefs = await SharedPreferences.getInstance();
       await prefs.setString('path_${app.name}', path);
 
@@ -201,7 +167,6 @@ class _StoreScreenState extends State<StoreScreen> {
           downloaded.add(app);
         }
       });
-
     } catch (e) {
       setState(() {
         app.downloading = false;
@@ -221,82 +186,123 @@ class _StoreScreenState extends State<StoreScreen> {
   void saveToFile(AppModel app) {
     if (app.path != null && File(app.path!).existsSync()) {
       Share.shareXFiles([XFile(app.path!)]);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File missing! Please download again.')),
-      );
-      setState(() {
-        app.downloaded = false;
-        downloaded.remove(app);
-      });
     }
   }
 
   /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: widget.dark ? Colors.black : const Color(0xfff2f2f7),
-        border: null,
-        middle: const Text("Vargas Store", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        trailing: CupertinoSwitch(
-          value: widget.dark,
-          onChanged: widget.onChanged,
-          activeColor: CupertinoColors.activeGreen, // لون سويتش أبل الأصلي
+    return Scaffold(
+      backgroundColor: Colors.black, // إزالة أي خطوط، خلفية سوداء خالصة
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            _buildCustomTabs(),
+            Expanded(
+              child: _buildBody(),
+            ),
+          ],
         ),
       ),
-      child: SafeArea(
-        child: _buildBody(),
+      bottomNavigationBar: buildBottomBar(),
+    );
+  }
+
+  // الهيدر (العنوان + زر البحث الوردي)
+  Widget _buildHeader() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            "Store",
+            style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: Colors.white),
+          ),
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: const Color(0xFFFF4081), // اللون الوردي
+            child: IconButton(
+              icon: const Icon(Icons.search, color: Colors.white, size: 24),
+              onPressed: () {}, // يمكنك تفعيل البحث لاحقاً
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // التبويبات العلوية (Apps / Downloads)
+  Widget _buildCustomTabs() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 24, right: 24, top: 10, bottom: 20),
+      child: Row(
+        children: [
+          _buildTabItem(title: "Apps", index: 0),
+          const SizedBox(width: 30),
+          _buildTabItem(title: "Downloads", index: 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabItem({required String title, required int index}) {
+    bool isActive = tab == index;
+    return GestureDetector(
+      onTap: () => setState(() => tab = index),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+              color: isActive ? Colors.white : Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 6),
+          // الخط الوردي تحت التبويب النشط فقط
+          if (isActive)
+            Container(
+              height: 3,
+              width: 30,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF4081),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          if (!isActive)
+            const SizedBox(height: 3), // مساحة فارغة للحفاظ على التناسق
+        ],
       ),
     );
   }
 
   Widget _buildBody() {
     if (isLoadingData) {
-      return const Center(child: CupertinoActivityIndicator(radius: 15));
+      return const Center(child: CircularProgressIndicator(color: Color(0xFFFF4081)));
     }
-
     if (errorMessage.isNotEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(errorMessage, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red, fontSize: 16)),
-        ),
-      );
+      return Center(child: Text(errorMessage, style: const TextStyle(color: Colors.red)));
     }
-
-    return Column(
-      children: [
-        // شريط البحث (شكل فقط)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: CupertinoSearchTextField(
-            backgroundColor: widget.dark ? const Color(0xFF1C1C1E) : Colors.black12,
-          ),
-        ),
-        Expanded(
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child: tab == 0 ? buildList(apps, false) : buildList(downloaded, true),
-          ),
-        ),
-        buildBottomBar(),
-      ],
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      child: tab == 0 ? buildList(apps, false) : buildList(downloaded, true),
     );
   }
 
-  /// ================= LIST =================
   Widget buildList(List<AppModel> list, bool isMyAppsTab) {
     if (list.isEmpty) {
       return Center(
         child: Text(
           isMyAppsTab ? "No downloaded apps yet." : "No apps available.",
-          style: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 16),
+          style: TextStyle(color: Colors.grey[600], fontSize: 16),
         ),
       );
     }
-
     return ListView.builder(
       physics: const BouncingScrollPhysics(),
       itemCount: list.length,
@@ -304,38 +310,35 @@ class _StoreScreenState extends State<StoreScreen> {
     );
   }
 
-  // تصميم البطاقة الاحترافي
+  // بطاقة التطبيق (نفس التصميم بالضبط)
   Widget appTile(AppModel app, bool isMyAppsTab) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: widget.dark ? const Color(0xff1c1c1e) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: const Color(0xFF1C1C1E), // رمادي داكن للبطاقات
+        borderRadius: BorderRadius.circular(24), // زوايا دائرية ناعمة
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // اللوغو (مضبوط بمقاس ثابت مستحيل يخرج عن الإطار)
+          // اللوغو المربع
           SizedBox(
             width: 65,
             height: 65,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(16),
               child: CachedNetworkImage(
                 imageUrl: app.icon,
-                fit: BoxFit.cover, // هذا يمنع وجود حواف بيضاء ويرتب الصورة
-                placeholder: (context, url) => const CupertinoActivityIndicator(),
-                errorWidget: (context, url, error) => Container(
-                  color: Colors.grey.withOpacity(0.2),
-                  child: const Icon(Icons.broken_image, color: Colors.grey),
-                ),
+                fit: BoxFit.cover,
+                placeholder: (context, url) => Container(color: Colors.black12),
+                errorWidget: (context, url, error) => const Icon(Icons.broken_image, color: Colors.grey),
               ),
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 16),
           
-          // النصوص وشريط التحميل
+          // النصوص والأزرار
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -343,48 +346,36 @@ class _StoreScreenState extends State<StoreScreen> {
               children: [
                 Text(
                   app.name,
-                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                // إظهار الإصدار والحجم إذا كانت موجودة في الـ JSON
-                if (app.version.isNotEmpty || app.size.isNotEmpty)
-                  Text(
-                    "${app.size} ${app.version.isNotEmpty ? '• v${app.version}' : ''}",
-                    style: const TextStyle(color: CupertinoColors.systemGrey, fontSize: 13),
-                  ),
-                  
+                Text(
+                  "version ${app.version} • ${app.size}",
+                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                
+                // شريط التحميل الوردي
                 if (app.downloading) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: app.progress,
-                            minHeight: 4,
-                            backgroundColor: widget.dark ? Colors.grey[800] : Colors.grey[300],
-                            valueColor: const AlwaysStoppedAnimation<Color>(CupertinoColors.systemPink), // شريط وردي
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        "${(app.progress * 100).toInt()}%",
-                        style: const TextStyle(fontSize: 12, color: CupertinoColors.systemGrey),
-                      ),
-                    ],
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: app.progress,
+                      minHeight: 4,
+                      backgroundColor: Colors.grey[800],
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF4081)),
+                    ),
                   ),
-                ]
+                  const SizedBox(height: 6),
+                ] else ...[
+                  // زر Install أو Stop أو Save
+                  buildButton(app, isMyAppsTab),
+                ],
               ],
             ),
           ),
-          
-          const SizedBox(width: 10),
-          // زر التحميل/الحفظ
-          buildButton(app, isMyAppsTab),
         ],
       ),
     );
@@ -392,62 +383,90 @@ class _StoreScreenState extends State<StoreScreen> {
 
   Widget buildButton(AppModel app, bool isMyAppsTab) {
     if (isMyAppsTab) {
-      return CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        color: CupertinoColors.activeBlue.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(16),
-        onPressed: () => saveToFile(app),
-        child: const Icon(CupertinoIcons.share_up, color: CupertinoColors.activeBlue, size: 20),
+      return _customButton(
+        text: "Save to Files",
+        bgColor: const Color(0xFF1A3B26), // أخضر داكن للتمييز
+        textColor: const Color(0xFF4CAF50), // أخضر فاتح
+        onTap: () => saveToFile(app),
+        icon: Icons.save_alt,
       );
     }
 
     if (app.downloading) {
-      return CupertinoButton(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        color: CupertinoColors.systemRed.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(16),
-        onPressed: () => cancelDownload(app),
-        child: const Text("Stop", style: TextStyle(color: CupertinoColors.systemRed, fontSize: 14, fontWeight: FontWeight.bold)),
+      return _customButton(
+        text: "Stop",
+        bgColor: const Color(0xFF3B1A1A), // أحمر داكن
+        textColor: const Color(0xFFF44336), // أحمر فاتح
+        onTap: () => cancelDownload(app),
       );
     }
 
     if (app.downloaded) {
-      return const Text("Done", style: TextStyle(color: CupertinoColors.systemGrey, fontSize: 15, fontWeight: FontWeight.bold));
+      return const Text("Installed", style: TextStyle(color: Colors.grey, fontSize: 14, fontWeight: FontWeight.bold));
     }
 
-    return CupertinoButton(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-      color: widget.dark ? const Color(0xFF3A3A3C) : const Color(0xFFE5E5EA), // لون الزر الرمادي
-      borderRadius: BorderRadius.circular(16),
-      onPressed: () => downloadApp(app),
-      child: const Text(
-        "GET", 
-        style: TextStyle(color: CupertinoColors.activeBlue, fontSize: 15, fontWeight: FontWeight.bold) // نص أزرق
+    // زر الـ Install الأزرق الداكن من التصميم
+    return _customButton(
+      text: "Install",
+      bgColor: const Color(0xFF142845), // أزرق كحلي داكن للخلفية
+      textColor: const Color(0xFF3282F6), // أزرق سماوي مضيء للنص
+      onTap: () => downloadApp(app),
+    );
+  }
+
+  // ودجت مخصصة لبناء الأزرار العصرية
+  Widget _customButton({required String text, required Color bgColor, required Color textColor, required VoidCallback onTap, IconData? icon}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: textColor, size: 16),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              text,
+              style: TextStyle(color: textColor, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   /// ================= BOTTOM NAV =================
   Widget buildBottomBar() {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: widget.dark ? Colors.white12 : Colors.black12, width: 0.5)),
+    return Theme(
+      data: ThemeData(
+        splashColor: Colors.transparent, // إزالة تأثير الضغطة
+        highlightColor: Colors.transparent,
       ),
-      child: CupertinoTabBar(
-        backgroundColor: widget.dark ? Colors.black : const Color(0xfff2f2f7),
+      child: BottomNavigationBar(
+        backgroundColor: Colors.black,
+        elevation: 0, // إزالة الخط العلوي بالكامل
+        type: BottomNavigationBarType.fixed, // يمنع الحركة ويخفي أي حدود مخفية
         currentIndex: tab,
         onTap: (i) => setState(() => tab = i),
-        activeColor: CupertinoColors.activeBlue,
-        inactiveColor: CupertinoColors.systemGrey,
+        selectedItemColor: const Color(0xFFFF4081), // لون أيقونة البار السفلي وردي
+        unselectedItemColor: Colors.grey[700],
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
         items: const [
           BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.square_grid_2x2),
-              activeIcon: Icon(CupertinoIcons.square_grid_2x2_fill),
-              label: "Store"),
+            icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.grid_view_rounded)),
+            label: "Store",
+          ),
           BottomNavigationBarItem(
-              icon: Icon(CupertinoIcons.folder),
-              activeIcon: Icon(CupertinoIcons.folder_fill),
-              label: "My Apps"),
+            icon: Padding(padding: EdgeInsets.only(bottom: 4), child: Icon(Icons.folder_open_rounded)),
+            label: "Downloads",
+          ),
         ],
       ),
     );
