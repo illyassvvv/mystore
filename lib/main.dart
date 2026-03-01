@@ -25,7 +25,9 @@ class AppModel {
   String size;
   String icon;
   String url;
-  String description; // إضافة الوصف
+  String description;
+  String age;   // إضافة العمر
+  String chart; // إضافة التقييم/الرتبة
 
   final ValueNotifier<DownloadState> stateNotifier;
   final ValueNotifier<double> progressNotifier;
@@ -40,6 +42,8 @@ class AppModel {
     required this.icon,
     required this.url,
     required this.description,
+    required this.age,
+    required this.chart,
   })  : stateNotifier = ValueNotifier(DownloadState.none),
         progressNotifier = ValueNotifier(0.0),
         isFavoriteNotifier = ValueNotifier(false);
@@ -51,7 +55,10 @@ class AppModel {
       size: json['size'] ?? '',
       icon: json['icon'] ?? '',
       url: json['url'] ?? '',
+      // استخدام toString() تحسباً لو تم كتابة الأرقام بدون علامات تنصيص في الـ JSON
       description: json['description'] ?? 'This is a great app. Download now to enjoy premium features and seamless experience tailored for your device.',
+      age: json['age']?.toString() ?? '4+', 
+      chart: json['chart']?.toString() ?? '#1',
     );
   }
 
@@ -83,7 +90,7 @@ class DownloadService {
       .replaceAll(' ', '_')
       .toLowerCase();
   }
-  // حساب المسار الموثوق 100% بناءً على الاسم فقط لمنع الاختلاط
+
   Future<String> getReliableFilePath(String appName) async {
     final dir = await _getSecureAppsDirectory();
     final safeName = _safeFileName(appName);
@@ -203,7 +210,6 @@ class StoreController extends ChangeNotifier {
       List<AppModel> fetchedApps = data.map((e) => AppModel.fromJson(e)).toList();
 
       if (isRefresh) {
-        // دمج ذكي للحفاظ على حالات التحميل النشطة
         for (var newApp in fetchedApps) {
           int existingIndex = allApps.indexWhere((a) => a.name == newApp.name);
           if (existingIndex >= 0) {
@@ -212,6 +218,8 @@ class StoreController extends ChangeNotifier {
             allApps[existingIndex].url = newApp.url;
             allApps[existingIndex].icon = newApp.icon;
             allApps[existingIndex].description = newApp.description;
+            allApps[existingIndex].age = newApp.age;
+            allApps[existingIndex].chart = newApp.chart;
           } else {
             allApps.add(newApp);
           }
@@ -241,7 +249,6 @@ class StoreController extends ChangeNotifier {
     for (var app in allApps) {
       app.isFavoriteNotifier.value = prefs.getBool('fav_${app.name}') ?? false;
       
-      // إذا لم يكن التطبيق قيد التحميل، نفحص هل هو محمل سابقاً
       if (app.stateNotifier.value == DownloadState.none) {
         final exists = await _downloadService.isFileExists(app.name);
         if (exists) {
@@ -283,7 +290,6 @@ class StoreController extends ChangeNotifier {
     notifyListeners(); 
   }
 
-  // حل مشكلة الحفظ (الاعتماد على المسار المباشر من الاسم)
   Future<void> saveToFile(AppModel app) async {
     final actualPath = await _downloadService.getReliableFilePath(app.name);
     if (File(actualPath).existsSync()) {
@@ -333,7 +339,7 @@ class _AppleBouncingButtonState extends State<AppleBouncingButton> {
 }
 
 /// ==========================================
-/// 5. APP DETAILS SCREEN (NEW)
+/// 5. APP DETAILS SCREEN
 /// ==========================================
 class AppDetailsScreen extends StatelessWidget {
   final AppModel app;
@@ -350,7 +356,6 @@ class AppDetailsScreen extends StatelessWidget {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          // شريط علوي شفاف بأسلوب آبل
           CupertinoSliverNavigationBar(
             largeTitle: const Text("App"),
             backgroundColor: isDark ? Colors.black.withOpacity(0.5) : Colors.white.withOpacity(0.5),
@@ -363,14 +368,13 @@ class AppDetailsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // الهيدر (شعار، اسم، أزرار التحميل)
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Hero(
                         tag: 'icon_${app.name}',
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(26), // Squircle
+                          borderRadius: BorderRadius.circular(26), 
                           child: CachedNetworkImage(
                             imageUrl: app.icon,
                             width: 110,
@@ -394,7 +398,6 @@ class AppDetailsScreen extends StatelessWidget {
                               style: const TextStyle(fontSize: 15, color: Colors.grey),
                             ),
                             const SizedBox(height: 16),
-                            // زر التحميل داخل التفاصيل
                             ValueListenableBuilder<DownloadState>(
                               valueListenable: app.stateNotifier,
                               builder: (context, state, child) {
@@ -433,7 +436,6 @@ class AppDetailsScreen extends StatelessWidget {
                     ],
                   ),
                   
-                  // شريط التقدم داخل التفاصيل
                   ValueListenableBuilder<DownloadState>(
                     valueListenable: app.stateNotifier,
                     builder: (context, state, child) {
@@ -475,13 +477,13 @@ class AppDetailsScreen extends StatelessWidget {
                   Divider(color: isDark ? Colors.white12 : Colors.black12),
                   const SizedBox(height: 16),
                   
-                  // معلومات التطبيق الإضافية
+                  // تم ربط هذه البيانات بـ app.size و app.age و app.chart
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _buildInfoBlock("SIZE", app.size),
-                      _buildInfoBlock("AGE", "4+"),
-                      _buildInfoBlock("CHART", "#1"),
+                      _buildInfoBlock("AGE", app.age),
+                      _buildInfoBlock("CHART", app.chart),
                     ],
                   ),
                   
@@ -489,7 +491,6 @@ class AppDetailsScreen extends StatelessWidget {
                   Divider(color: isDark ? Colors.white12 : Colors.black12),
                   const SizedBox(height: 20),
                   
-                  // الوصف
                   const Text("Description", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                   const SizedBox(height: 12),
                   Text(
@@ -705,7 +706,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       slivers: [
         const SliverPadding(padding: EdgeInsets.only(top: 100)),
-        // أداة Pull to Refresh
         CupertinoSliverRefreshControl(
           onRefresh: _controller.refreshApps,
         ),
@@ -720,7 +720,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
               delegate: SliverChildBuilderDelegate(
                 (context, i) {
                   final app = list[i];
-                  // إضافة Key لمنع إعادة استخدام البيانات بشكل خاطئ
                   return KeyedSubtree(
                     key: ValueKey(app.name),
                     child: _buildAnimatedCard(app, isMyAppsTab),
@@ -786,7 +785,6 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
 
   Widget _buildAnimatedCard(AppModel app, bool isMyAppsTab) {
     return GestureDetector(
-      // فتح صفحة التفاصيل الجديدة
       onTap: () {
         Navigator.push(
           context,
@@ -806,9 +804,8 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: Theme.of(context).cardColor.withOpacity(0.9),
-              borderRadius: BorderRadius.circular(24), // Squircle
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(color: widget.isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.04)),
-              // ظلال خفيفة في الوضع الفاتح فقط لعمق الألوان
               boxShadow: widget.isDark ? [] : [
                 BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 20, offset: const Offset(0, 10))
               ],
@@ -929,7 +926,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
 
   Widget _buildAppIcon(AppModel app) {
     return Hero(
-      tag: 'icon_${app.name}', // Hero Animation للربط بين البطاقة وصفحة التفاصيل
+      tag: 'icon_${app.name}',
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: CachedNetworkImage(
