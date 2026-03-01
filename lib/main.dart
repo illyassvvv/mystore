@@ -1,18 +1,16 @@
-// ================= IMPORTS =================
-import 'dart:convert';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:io';
 
 void main() {
   runApp(const MyApp());
 }
 
-/// =================================================
-/// APP ROOT
-/// =================================================
+/// ================= APP =================
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
@@ -25,298 +23,274 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoApp(
+    return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme:
-          CupertinoThemeData(brightness: dark ? Brightness.dark : Brightness.light),
-      home: HomeScreen(
+      themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+
+      theme: ThemeData(
+        fontFamily: ".SF Pro Text",
+        scaffoldBackgroundColor: const Color(0xfff2f2f7),
+      ),
+
+      darkTheme: ThemeData(
+        fontFamily: ".SF Pro Text",
+        scaffoldBackgroundColor: Colors.black,
+      ),
+
+      home: StoreScreen(
         dark: dark,
-        toggle: () => setState(() => dark = !dark),
+        onChanged: (v) => setState(() => dark = v),
       ),
     );
   }
 }
 
-/// =================================================
-/// MODEL
-/// =================================================
+/// ================= MODEL =================
 class AppModel {
-  final String name;
-  final String icon;
-  final String url;
-  final String description;
+  String name;
+  String icon;
+  String url;
 
-  bool installed = false;
-  bool favorite = false;
+  bool downloading = false;
+  bool downloaded = false;
+  double progress = 0;
+
+  String? path;
+  CancelToken? token;
 
   AppModel({
     required this.name,
     required this.icon,
     required this.url,
-    required this.description,
+  });
+}
+
+/// ================= STORE =================
+class StoreScreen extends StatefulWidget {
+  final bool dark;
+  final ValueChanged<bool> onChanged;
+
+  const StoreScreen({
+    super.key,
+    required this.dark,
+    required this.onChanged,
   });
 
-  factory AppModel.fromJson(Map j) {
-    return AppModel(
-      name: j["name"],
-      icon: j["icon"],
-      url: j["url"],
-      description: j["description"] ?? "",
-    );
-  }
-}
-
-/// =================================================
-/// HOME
-/// =================================================
-class HomeScreen extends StatefulWidget {
-  final bool dark;
-  final VoidCallback toggle;
-
-  const HomeScreen({super.key, required this.dark, required this.toggle});
-
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<StoreScreen> createState() => _StoreScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _StoreScreenState extends State<StoreScreen>
+    with TickerProviderStateMixin {
+  final Dio dio = Dio();
 
   int tab = 0;
-  String search = "";
 
-  List<AppModel> apps = [];
-  List<AppModel> myApps = [];
+  List<AppModel> apps = [
+    AppModel(
+      name: "Spotify Reborn",
+      icon:
+          "https://cdn-icons-png.flaticon.com/512/174/174872.png",
+      url: "https://files.catbox.moe/zixadh.ipa",
+    ),
+    AppModel(
+      name: "YouTube Reborn",
+      icon:
+          "https://cdn-icons-png.flaticon.com/512/1384/1384060.png",
+      url: "https://files.catbox.moe/thkhke.ipa",
+    ),
+    AppModel(
+      name: "Instagram LRD",
+      icon:
+          "https://cdn-icons-png.flaticon.com/512/1384/1384063.png",
+      url: "https://files.catbox.moe/7y44eg.ipa",
+    ),
+  ];
 
-  final jsonUrl =
-      "https://raw.githubusercontent.com/illyassvv-alt/MyApps/main/apps.json";
+  List<AppModel> downloaded = [];
 
-  @override
-  void initState() {
-    super.initState();
-    loadApps();
-  }
-
-  /// LOAD ONLINE
-  Future loadApps() async {
-    final res = await http.get(Uri.parse(jsonUrl));
-    final data = jsonDecode(res.body);
+  /// ================= DOWNLOAD =================
+  Future download(AppModel app) async {
+    app.token = CancelToken();
 
     setState(() {
-      apps = List.from(data.map((e) => AppModel.fromJson(e)));
+      app.downloading = true;
+      app.progress = 0;
+    });
+
+    final dir = await getTemporaryDirectory();
+    final path = "${dir.path}/${app.name}.ipa";
+
+    await dio.download(
+      app.url,
+      path,
+      cancelToken: app.token,
+      onReceiveProgress: (r, t) {
+        if (t != -1) {
+          setState(() {
+            app.progress = r / t;
+          });
+        }
+      },
+    );
+
+    setState(() {
+      app.downloading = false;
+      app.downloaded = true;
+      app.path = path;
+      downloaded.add(app);
     });
   }
 
+  void pause(AppModel app) {
+    app.token?.cancel();
+    setState(() {
+      app.downloading = false;
+    });
+  }
+
+  void save(AppModel app) {
+    if (app.path != null) {
+      Share.shareXFiles([XFile(app.path!)]);
+    }
+  }
+
+  /// ================= UI =================
   @override
   Widget build(BuildContext context) {
-
-    final filtered = apps
-        .where((a) =>
-            a.name.toLowerCase().contains(search.toLowerCase()))
-        .toList();
-
     return CupertinoPageScaffold(
       navigationBar: CupertinoNavigationBar(
         middle: const Text("My Store"),
-        trailing:
-            CupertinoSwitch(value: widget.dark, onChanged: (_) => widget.toggle()),
+        trailing: CupertinoSwitch(
+          value: widget.dark,
+          onChanged: widget.onChanged,
+        ),
       ),
-
       child: SafeArea(
         child: Column(
           children: [
-
-            /// SEARCH
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: CupertinoSearchTextField(
-                onChanged: (v) => setState(() => search = v),
+            buildSearch(),
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 400),
+                child:
+                    tab == 0 ? buildList(apps, false) : buildList(downloaded, true),
               ),
             ),
-
-            /// FEATURED
-            if (apps.isNotEmpty)
-              featured(apps.first),
-
-            Expanded(
-              child: tab == 0
-                  ? buildList(filtered)
-                  : buildList(myApps),
-            ),
-
-            CupertinoTabBar(
-              currentIndex: tab,
-              onTap: (i) => setState(() => tab = i),
-              items: const [
-                BottomNavigationBarItem(
-                    icon: Icon(CupertinoIcons.square_grid_2x2),
-                    label: "Store"),
-                BottomNavigationBarItem(
-                    icon: Icon(CupertinoIcons.folder),
-                    label: "My Apps"),
-              ],
-            )
+            buildBottomBar(),
           ],
         ),
       ),
     );
   }
 
-  /// FEATURED CARD
-  Widget featured(AppModel app) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      height: 180,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(30),
-        image: DecorationImage(
-          image: NetworkImage(app.icon),
-          fit: BoxFit.cover,
-        ),
-      ),
+  Widget buildSearch() {
+    return Padding(
+      padding: const EdgeInsets.all(14),
+      child: CupertinoSearchTextField(),
     );
   }
 
-  /// LIST
-  Widget buildList(List<AppModel> list) {
+  /// ================= LIST =================
+  Widget buildList(List<AppModel> list, bool saved) {
     if (list.isEmpty) {
-      return const Center(child: Text("Empty"));
+      return const Center(child: Text("No Apps"));
     }
 
     return ListView.builder(
       itemCount: list.length,
-      itemBuilder: (_, i) => appCard(list[i]),
+      itemBuilder: (_, i) => appTile(list[i], saved),
     );
   }
 
-  /// APP CARD
-  Widget appCard(AppModel app) {
-
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          CupertinoPageRoute(
-            builder: (_) => DetailPage(
-              app: app,
-              install: installApp,
-            ),
-          ),
-        );
-      },
-
-      child: Container(
-        margin: const EdgeInsets.all(14),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemGrey6.withOpacity(.2),
-          borderRadius: BorderRadius.circular(25),
-        ),
-        child: Row(
-          children: [
-
-            Hero(
-              tag: app.name,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: CachedNetworkImage(
-                  imageUrl: app.icon,
-                  width: 70,
-                  height: 70,
-                ),
-              ),
-            ),
-
-            const SizedBox(width: 14),
-
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(app.name,
-                      style:
-                          const TextStyle(fontWeight: FontWeight.bold)),
-                  Text(app.description,
-                      style:
-                          const TextStyle(color: CupertinoColors.systemGrey)),
-                ],
-              ),
-            ),
-
-            CupertinoButton(
-              child: Text(app.installed ? "OPEN" : "GET"),
-              onPressed: () => installApp(app),
-            )
-          ],
-        ),
+  Widget appTile(AppModel app, bool saved) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xff1c1c1e),
+        borderRadius: BorderRadius.circular(18),
       ),
-    );
-  }
-
-  /// INSTALL
-  void installApp(AppModel app) {
-    setState(() {
-      app.installed = true;
-      if (!myApps.contains(app)) {
-        myApps.add(app);
-      }
-    });
-  }
-}
-
-/// =================================================
-/// DETAIL PAGE
-/// =================================================
-class DetailPage extends StatelessWidget {
-
-  final AppModel app;
-  final Function install;
-
-  const DetailPage({super.key, required this.app, required this.install});
-
-  @override
-  Widget build(BuildContext context) {
-
-    return CupertinoPageScaffold(
-      navigationBar:
-          CupertinoNavigationBar(middle: Text(app.name)),
-      child: ListView(
+      child: Row(
         children: [
-
-          const SizedBox(height: 30),
-
-          Center(
-            child: Hero(
-              tag: app.name,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(30),
-                child: CachedNetworkImage(
-                  imageUrl: app.icon,
-                  width: 160,
-                  height: 160,
-                ),
-              ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: CachedNetworkImage(
+              imageUrl: app.icon,
+              width: 60,
+              height: 60,
+              fit: BoxFit.cover,
             ),
           ),
-
-          const SizedBox(height: 20),
-
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Text(
-              app.description,
-              textAlign: TextAlign.center,
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(app.name,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w600)),
+                if (app.downloading)
+                  Column(
+                    children: [
+                      const SizedBox(height: 6),
+                      LinearProgressIndicator(
+                        value: app.progress,
+                        minHeight: 4,
+                      ),
+                      Text(
+                          "${(app.progress * 100).toInt()}%"),
+                    ],
+                  )
+              ],
             ),
           ),
-
-          CupertinoButton.filled(
-            child: const Text("Install"),
-            onPressed: () {
-              install(app);
-              Share.share(app.url);
-            },
-          )
+          buildButton(app, saved)
         ],
       ),
+    );
+  }
+
+  Widget buildButton(AppModel app, bool saved) {
+    if (saved) {
+      return CupertinoButton(
+        padding: EdgeInsets.zero,
+        child: const Text("Save"),
+        onPressed: () => save(app),
+      );
+    }
+
+    if (app.downloading) {
+      return CupertinoButton(
+        child: const Icon(CupertinoIcons.pause),
+        onPressed: () => pause(app),
+      );
+    }
+
+    if (app.downloaded) {
+      return const Text("Done");
+    }
+
+    return CupertinoButton(
+      child: const Text("Download"),
+      onPressed: () => download(app),
+    );
+  }
+
+  /// ================= IOS TAB BAR =================
+  Widget buildBottomBar() {
+    return CupertinoTabBar(
+      currentIndex: tab,
+      onTap: (i) => setState(() => tab = i),
+      items: const [
+        BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.square_grid_2x2),
+            label: "Store"),
+        BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.folder),
+            label: "My Apps"),
+      ],
     );
   }
 }
