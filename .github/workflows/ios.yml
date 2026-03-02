@@ -1,37 +1,43 @@
-name: iOS Build
+name: Build Unsigned iOS IPA
 
 on:
+  workflow_dispatch: # هذا السطر يسمح لك بتشغيل البناء يدوياً بضغطة زر
   push:
     branches:
-      - main
+      - main # سيبدأ البناء تلقائياً إذا رفعت تعديلات لفرع main
 
 jobs:
   build:
-    runs-on: macos-latest
+    name: Build iOS IPA
+    runs-on: macos-latest # استخدام سيرفرات ماك من جيتهاب
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v3
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          flutter-version: 3.41.2
+          channel: 'stable'
 
-      - name: Install packages
+      - name: Install Dependencies
         run: flutter pub get
 
-      # ⭐ build WITHOUT signing
-      - name: Build iOS Runner
-        run: |
-          flutter build ios --release --no-codesign
-          cd build/ios/iphoneos
-          mkdir Payload
-          cp -r Runner.app Payload/
-          zip -r app.ipa Payload
+      - name: Build iOS (No Codesign)
+        # بناء التطبيق بدون المطالبة بشهادات آبل
+        run: flutter build ios --release --no-codesign
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
+      - name: Create IPA Payload
+        # هذه الخطوة السحرية تحول ملف الـ App إلى IPA
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r -9 VargasStore.ipa Payload
+
+      - name: Upload IPA Artifact
+        # هذه الخطوة ترفع الملف النهائي لكي تستطيع تحميله
+        uses: actions/upload-artifact@v3
         with:
-          name: ios-ipa
-          path: build/ios/iphoneos/app.ipa
+          name: VargasStore-Release
+          path: build/ios/iphoneos/VargasStore.ipa
