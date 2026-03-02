@@ -8,10 +8,10 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14   # أكثر استقراراً من macos-latest
+    runs-on: macos-14
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Flutter
@@ -20,52 +20,36 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Flutter Doctor
-        run: flutter doctor -v
-
-      - name: Clean Project
+      - name: Clean
         run: flutter clean
 
-      - name: Get Dependencies
+      - name: Pub Get
         run: flutter pub get
 
-      # 🔥 تعطيل التوقيع بالكامل داخل مشروع Xcode
-      - name: Disable Code Signing Completely
+      - name: Build iOS Archive (No Signing)
         run: |
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = .*;/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*;/PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj
-
-      # 🔥 بناء Flutter بدون توقيع
-      - name: Build iOS (No Codesign)
-        run: flutter build ios --release --no-codesign
-
-      # 🔥 إجبار Xcode على البناء بدون توقيع نهائياً
-      - name: Force Xcode Build Without Signing
-        run: |
+          flutter build ios --release --no-codesign
           cd ios
           xcodebuild \
             -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
-            -sdk iphoneos \
+            -archivePath build/Runner.xcarchive \
+            -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build
+            archive
 
-      # 🔥 إنشاء IPA يدوياً
-      - name: Create IPA
+      - name: Export IPA
         run: |
-          mkdir -p build/ios/iphoneos/Payload
-          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
-          cd build/ios/iphoneos
+          mkdir -p build/ipa
+          cp -r ios/build/Runner.xcarchive/Products/Applications/Runner.app build/ipa/
+          cd build/ipa
+          mkdir Payload
+          mv Runner.app Payload/
           zip -r MyStore.ipa Payload
 
-      # 🔥 رفع الملف (v4 فقط)
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: MyStore-IPA
-          path: build/ios/iphoneos/MyStore.ipa
+          path: build/ipa/MyStore.ipa
