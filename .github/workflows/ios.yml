@@ -23,33 +23,14 @@ jobs:
       - name: Clean
         run: flutter clean
 
-      - name: Pub Get
+      - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build iOS Archive (No Signing)
-        run: |
-          flutter build ios --release --no-codesign
-          cd ios
-          xcodebuild \
-            -workspace Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -archivePath build/Runner.xcarchive \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            archive
-
-      - name: Export IPA
-        run: |
-          mkdir -p build/ipa
-          cp -r ios/build/Runner.xcarchive/Products/Applications/Runner.app build/ipa/
-          cd build/ipa
-          mkdir Payload
-          mv Runner.app Payload/
-          zip -r MyStore.ipa Payload
+      - name: Build IPA (No Signing)
+        run: flutter build ipa --release --no-codesign
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: MyStore-IPA
-          path: build/ipa/MyStore.ipa
+          path: build/ios/ipa/*.ipa
