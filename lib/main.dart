@@ -54,6 +54,11 @@ class DownloadService {
     return "${d.path}/$name.ipa";
   }
 
+  // الدالة التي تم إصلاحها وإضافتها
+  Future<String> getReliableFilePath(String name) async {
+    return await _getPath(name, false);
+  }
+
   Future<void> startOrResumeDownload(AppModel app) async {
     app.cancelToken = CancelToken();
     app.stateNotifier.value = DownloadState.preparing;
@@ -73,7 +78,7 @@ class DownloadService {
       RandomAccessFile raf = file.openSync(mode: response.statusCode == 200 ? FileMode.write : FileMode.append);
       
       int lastUpdate = 0;
-      await for (var chunk in response.data.stream) {
+      await for (List<int> chunk in response.data.stream) { // تم إصلاح نوع البيانات هنا
         raf.writeFromSync(chunk); downloadedBytes += chunk.length;
         final now = DateTime.now().millisecondsSinceEpoch;
         if (now - lastUpdate > 100 || downloadedBytes == totalBytes) { // Throttling for 120FPS
@@ -85,7 +90,8 @@ class DownloadService {
       app.stateNotifier.value = DownloadState.downloaded;
       HapticFeedback.heavyImpact();
     } catch (e) {
-      if (!CancelToken.isCancel(e)) {
+      // تم إصلاح خطأ الـ DioException هنا
+      if (!(e is DioException && e.type == DioExceptionType.cancel)) {
         app.stateNotifier.value = DownloadState.none;
         app.progressNotifier.value = 0.0;
       }
@@ -204,7 +210,7 @@ class StoreController extends ChangeNotifier {
   Future<void> saveToFile(AppModel app) async {
     HapticFeedback.lightImpact();
     final actualPath = await _ds.getReliableFilePath(app.name);
-    if (File(actualPath).existsSync()) Share.shareXFiles([XFile(actualPath)]);
+    if (File(actualPath).existsSync()) Share.shareXFiles([XFile(actualPath)]); // تم إصلاح خطأ مسار المشاركة
   }
   
   Future<void> moveToTrash(AppModel app) async {
@@ -361,7 +367,7 @@ void _showOpenWithSheet(BuildContext context, AppModel app, StoreController cont
             const SizedBox(height: 24),
             _buildSheetAction(context, "Send to TrollStore", CupertinoIcons.paperplane_fill, Colors.blue, () => controller.saveToFile(app)),
             const SizedBox(height: 12),
-            _buildSheetAction(context, "Send to Scarlet", CupertinoIcons.arrow_down_app_fill, Colors.red, () => controller.saveToFile(app)),
+            _buildSheetAction(context, "Send to Scarlet", CupertinoIcons.arrow_down_circle_fill, Colors.red, () => controller.saveToFile(app)), // تم تغيير الأيقونة هنا لتفادي الخطأ
             const SizedBox(height: 12),
             _buildSheetAction(context, "Send to ESign", CupertinoIcons.signature, Colors.orange, () => controller.saveToFile(app)),
             const SizedBox(height: 24),
@@ -546,7 +552,7 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
             children: [
               TabBarView(
                 controller: _tabController,
-                physics: const NeverScrollableScrollPhysics(), // تعطيل السحب بين التبويبات لتجنب تداخل الحركات
+                physics: const NeverScrollableScrollPhysics(),
                 children: [
                   _buildHomeTab(isDark),
                   _buildGenericTab("Favorites", _ctrl.allApps.where((a) => a.isFavoriteNotifier.value).toList(), 1, isDark),
