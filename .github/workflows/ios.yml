@@ -1,43 +1,49 @@
 name: Build Unsigned iOS IPA
 
 on:
-  workflow_dispatch: # هذا السطر يسمح لك بتشغيل البناء يدوياً بضغطة زر
+  workflow_dispatch:
   push:
     branches:
-      - main # سيبدأ البناء تلقائياً إذا رفعت تعديلات لفرع main
+      - main
 
 jobs:
   build:
-    name: Build iOS IPA
-    runs-on: macos-latest # استخدام سيرفرات ماك من جيتهاب
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          channel: stable
 
-      - name: Install Dependencies
+      - name: Clean Project
+        run: flutter clean
+
+      - name: Get Dependencies
         run: flutter pub get
 
+      - name: Disable Code Signing
+        run: |
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*/PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj
+
       - name: Build iOS (No Codesign)
-        # بناء التطبيق بدون المطالبة بشهادات آبل
         run: flutter build ios --release --no-codesign
 
-      - name: Create IPA Payload
-        # هذه الخطوة السحرية تحول ملف الـ App إلى IPA
+      - name: Create IPA
         run: |
           mkdir -p build/ios/iphoneos/Payload
           mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
           cd build/ios/iphoneos
-          zip -r -9 VargasStore.ipa Payload
+          zip -r MyStore.ipa Payload
 
-      - name: Upload IPA Artifact
-        # هذه الخطوة ترفع الملف النهائي لكي تستطيع تحميله
-        uses: actions/upload-artifact@v3
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
         with:
-          name: VargasStore-Release
-          path: build/ios/iphoneos/VargasStore.ipa
+          name: MyStore-IPA
+          path: build/ios/iphoneos/MyStore.ipa
