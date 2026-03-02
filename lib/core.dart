@@ -6,8 +6,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert';
-import 'package:flutter/services.dart'; // مسؤولة عن HapticFeedback
-import 'package:share_plus/share_plus.dart'; // مسؤولة عن Share و XFile
 
 enum DownloadState { none, downloading, paused, downloaded }
 
