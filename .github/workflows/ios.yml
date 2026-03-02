@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14   # أكثر استقراراً من macos-latest
 
     steps:
       - name: Checkout Repository
@@ -18,6 +18,10 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
+
+      - name: Flutter Doctor
+        run: flutter doctor -v
 
       - name: Clean Project
         run: flutter clean
@@ -25,23 +29,41 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Disable Code Signing
+      # 🔥 تعطيل التوقيع بالكامل داخل مشروع Xcode
+      - name: Disable Code Signing Completely
         run: |
           sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/DEVELOPMENT_TEAM = .*/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_IDENTITY = .*/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*/PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = .*;/CODE_SIGN_IDENTITY = "";/g' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*;/PROVISIONING_PROFILE_SPECIFIER = "";/g' ios/Runner.xcodeproj/project.pbxproj
 
+      # 🔥 بناء Flutter بدون توقيع
       - name: Build iOS (No Codesign)
         run: flutter build ios --release --no-codesign
 
+      # 🔥 إجبار Xcode على البناء بدون توقيع نهائياً
+      - name: Force Xcode Build Without Signing
+        run: |
+          cd ios
+          xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      # 🔥 إنشاء IPA يدوياً
       - name: Create IPA
         run: |
           mkdir -p build/ios/iphoneos/Payload
-          mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
           cd build/ios/iphoneos
           zip -r MyStore.ipa Payload
 
+      # 🔥 رفع الملف (v4 فقط)
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
