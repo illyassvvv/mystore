@@ -20,6 +20,9 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Show Flutter Version
+        run: flutter --version
+
       - name: Flutter Clean
         run: flutter clean
 
@@ -27,10 +30,15 @@ jobs:
         run: flutter pub get
 
       - name: Build IPA (No Codesign)
-        run: flutter build ipa --no-codesign
+        run: flutter build ipa --release --no-codesign
+
+      - name: Search for IPA
+        run: |
+          echo "Searching for IPA file..."
+          find . -name "*.ipa"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-ipa
-          path: build/ios/ipa/*.ipa
+          path: "**/*.ipa"
