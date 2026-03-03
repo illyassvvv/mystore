@@ -79,12 +79,15 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    
+    // عندما نغير التبويب، نغلق البحث تلقائياً لكي لا يحدث تداخل
     _tabController.addListener(() {
       if (_isSearching.value) {
         _isSearching.value = false;
         _searchController.clear();
         _ctrl.applyFilters('');
       }
+      setState(() {}); // تحديث حالة IndexedStack
     });
     _ctrl.initStore();
   }
@@ -104,45 +107,40 @@ class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStat
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
-          // 🔥 IndexedStack لمنع تداخل الشاشات (UI Crush) عند التنقل
-          AnimatedBuilder(
-            animation: _tabController,
-            builder: (context, _) {
-              return IndexedStack(
-                index: _tabController.index,
-                children: [
-                  _HomeTab(
-                    ctrl: _ctrl,
-                    isDark: widget.isDark,
-                    onThemeToggle: widget.onThemeToggle,
-                    categories: categories,
-                    isSearchingNotifier: _isSearching,
-                    searchController: _searchController,
-                  ),
-                  _GenericTab(
-                    title: "Favorites",
-                    ctrl: _ctrl,
-                    tabIndex: 1,
-                    isDark: widget.isDark,
-                    listSelector: (ctrl) => ctrl.allApps.where((a) => a.isFavoriteNotifier.value).toList(),
-                  ),
-                  _GenericTab(
-                    title: "Downloads",
-                    ctrl: _ctrl,
-                    tabIndex: 2,
-                    isDark: widget.isDark,
-                    listSelector: (ctrl) => ctrl.allApps.where((a) => a.stateNotifier.value == DownloadState.downloaded && !a.isTrashedNotifier.value).toList(),
-                  ),
-                  _GenericTab(
-                    title: "Trash",
-                    ctrl: _ctrl,
-                    tabIndex: 3,
-                    isDark: widget.isDark,
-                    listSelector: (ctrl) => ctrl.allApps.where((a) => a.isTrashedNotifier.value).toList(),
-                  ),
-                ],
-              );
-            },
+          // 🔥 IndexedStack هنا يمنع تداخل الصفحات عند التنقل تماماً (No UI Crush)
+          IndexedStack(
+            index: _tabController.index,
+            children: [
+              _HomeTab(
+                ctrl: _ctrl,
+                isDark: widget.isDark,
+                onThemeToggle: widget.onThemeToggle,
+                categories: categories,
+                isSearchingNotifier: _isSearching,
+                searchController: _searchController,
+              ),
+              _GenericTab(
+                title: "Favorites",
+                ctrl: _ctrl,
+                tabIndex: 1,
+                isDark: widget.isDark,
+                listSelector: (ctrl) => ctrl.allApps.where((a) => a.isFavoriteNotifier.value).toList(),
+              ),
+              _GenericTab(
+                title: "Downloads",
+                ctrl: _ctrl,
+                tabIndex: 2,
+                isDark: widget.isDark,
+                listSelector: (ctrl) => ctrl.allApps.where((a) => a.stateNotifier.value == DownloadState.downloaded && !a.isTrashedNotifier.value).toList(),
+              ),
+              _GenericTab(
+                title: "Trash",
+                ctrl: _ctrl,
+                tabIndex: 3,
+                isDark: widget.isDark,
+                listSelector: (ctrl) => ctrl.allApps.where((a) => a.isTrashedNotifier.value).toList(),
+              ),
+            ],
           ),
           Positioned(
             bottom: 30,
@@ -198,13 +196,15 @@ class _HomeTab extends StatelessWidget {
                       color: isDark ? Colors.black.withOpacity(0.55) : Colors.white.withOpacity(0.55),
                       border: Border(bottom: BorderSide(color: Colors.grey.withOpacity(isDark ? 0.15 : 0.2), width: 0.5)),
                     ),
-                    padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10, left: 20, right: 20),
+                    padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10, left: 20, right: 20, bottom: 10),
+                    alignment: Alignment.bottomCenter, // ترتيب العناصر للأسفل لتجنب التداخل مع شريط الحالة
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             AppleBouncingButton(
                               onTap: onThemeToggle,
@@ -242,16 +242,18 @@ class _HomeTab extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // 🔥 AnimatedCrossFade لمنع الـ Crush عند فتح البحث
+                        // 🔥 AnimatedSwitcher مع FadeTransition لمنع تداخل شريط البحث والفئات
                         ValueListenableBuilder<bool>(
                           valueListenable: isSearchingNotifier,
                           builder: (context, isSearching, _) {
-                            return AnimatedCrossFade(
-                              firstChild: _buildCategoryRow(context),
-                              secondChild: _buildSearchRow(context),
-                              crossFadeState: isSearching ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                              duration: const Duration(milliseconds: 250),
-                              sizeCurve: Curves.easeOutCubic,
+                            return AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 200),
+                              transitionBuilder: (Widget child, Animation<double> animation) {
+                                return FadeTransition(opacity: animation, child: child);
+                              },
+                              child: isSearching
+                                  ? KeyedSubtree(key: const ValueKey('search'), child: _buildSearchRow(context))
+                                  : KeyedSubtree(key: const ValueKey('categories'), child: _buildCategoryRow(context)),
                             );
                           },
                         ),
@@ -323,10 +325,14 @@ class _HomeTab extends StatelessWidget {
     return Row(
       children: [
         Expanded(
-          child: CupertinoSearchTextField(
-            controller: searchController,
-            style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
-            onChanged: ctrl.applyFilters,
+          child: SizedBox(
+            height: 36,
+            child: CupertinoSearchTextField(
+              controller: searchController,
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              onChanged: ctrl.applyFilters,
+              autofocus: true,
+            ),
           ),
         ),
         const SizedBox(width: 12),
