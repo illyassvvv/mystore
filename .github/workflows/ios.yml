@@ -1,4 +1,4 @@
-name: Build IPA (No Signing)
+name: Build IPA (Unsigned)
 
 on:
   workflow_dispatch:
@@ -11,28 +11,47 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - run: flutter clean
-      - run: flutter pub get
+      - name: Flutter Clean
+        run: flutter clean
 
-      # 🔥 تعطيل التوقيع داخل المشروع
-      - name: Disable Code Signing
+      - name: Get Dependencies
+        run: flutter pub get
+
+      - name: Build iOS App (No Codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Archive App (Force No Signing)
         run: |
-          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/' ios/Runner.xcodeproj/project.pbxproj
-          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*;/PROVISIONING_PROFILE_SPECIFIER = "";/' ios/Runner.xcodeproj/project.pbxproj
+          xcodebuild -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -archivePath build/Runner.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
 
-      - name: Build IPA (No Codesign)
-        run: flutter build ipa --no-codesign
+      - name: Export IPA
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath build/Runner.xcarchive \
+            -exportOptionsPlist ios/ExportOptions.plist \
+            -exportPath build/ipa \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-ipa
-          path: build/ios/ipa/*.ipa
+          path: build/ipa/*.ipa
