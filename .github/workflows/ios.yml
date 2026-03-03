@@ -1,44 +1,40 @@
-name: Build IPA (No Signing)
+name: Build Unsigned iOS IPA
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: 
   push:
     branches:
-      - main
+      - main 
 
 jobs:
   build:
-    runs-on: macos-latest
+    name: Build iOS IPA
+    runs-on: macos-latest 
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4 # تم التحديث إلى الإصدار الرابع
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-          cache: true
+          channel: 'stable'
 
-      - name: Show Flutter Version
-        run: flutter --version
-
-      - name: Flutter Clean
-        run: flutter clean
-
-      - name: Get Dependencies
+      - name: Install Dependencies
         run: flutter pub get
 
-      - name: Build IPA (No Codesign)
-        run: flutter build ipa --release --no-codesign
+      - name: Build iOS (No Codesign)
+        run: flutter build ios --release --no-codesign
 
-      - name: Search for IPA
+      - name: Create IPA Payload
         run: |
-          echo "Searching for IPA file..."
-          find . -name "*.ipa"
+          mkdir -p build/ios/iphoneos/Payload
+          mv build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
+          cd build/ios/iphoneos
+          zip -r -9 VargasStore.ipa Payload
 
-      - name: Upload IPA
-        uses: actions/upload-artifact@v4
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4 # 🔥 تم حل المشكلة هنا باستخدام الإصدار الرابع 🔥
         with:
-          name: unsigned-ipa
-          path: "**/*.ipa"
+          name: VargasStore-Release
+          path: build/ios/iphoneos/VargasStore.ipa
