@@ -115,7 +115,7 @@ class StoreController extends ChangeNotifier {
   Future<void> initStore({bool isRefresh = false}) async {
     if (!isRefresh) { isLoading = true; notifyListeners(); }
     try {
-      final res = await Dio().get("https://raw.githubusercontent.com/illyassvv-alt/MyApps/main/apps.json?t=${DateTime.now().millisecondsSinceEpoch}");
+      final res = await Dio().get("https://raw.githubusercontent.com/illyassvvv/MyApps/main/apps.json?t=${DateTime.now().millisecondsSinceEpoch}");
       List<dynamic> data = res.data is String ? jsonDecode(res.data) : res.data;
       List<dynamic> visibleApps = data.where((e) => e['hidden'] != true).toList();
       List<AppModel> fetchedApps = visibleApps.map((e) => AppModel.fromJson(e)).toList();
