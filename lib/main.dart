@@ -1,578 +1,321 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:palette_generator/palette_generator.dart';
 import 'dart:ui';
 import 'core.dart';
 import 'widgets.dart';
+import 'app_details.dart';
 
-class AppDetailsScreen extends StatefulWidget {
-  final AppModel app;
-  final StoreController ctrl;
-
-  const AppDetailsScreen({
-    super.key,
-    required this.app,
-    required this.ctrl,
-  });
-
-  @override
-  State<AppDetailsScreen> createState() => _AppDetailsScreenState();
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
 }
 
-class _AppDetailsScreenState extends State<AppDetailsScreen> {
-  Color? dominantColor;
-  late ScrollController _scrollController;
-  final ValueNotifier<double> _scrollOffset = ValueNotifier(0.0);
-
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
   @override
-  void initState() {
-    super.initState();
-    _scrollController = ScrollController()..addListener(() {
-      _scrollOffset.value = _scrollController.offset;
-    });
-    _extractColor();
-  }
+  State<MyApp> createState() => _MyAppState();
+}
 
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    _scrollOffset.dispose();
-    super.dispose();
-  }
+class _MyAppState extends State<MyApp> {
+  ThemeMode _themeMode = ThemeMode.dark;
 
-  Future<void> _extractColor() async {
-    try {
-      final PaletteGenerator gen = await PaletteGenerator.fromImageProvider(
-        CachedNetworkImageProvider(widget.app.icon),
-      );
-      if (mounted) setState(() => dominantColor = gen.dominantColor?.color);
-    } catch (_) {}
+  void toggleTheme() {
+    HapticFeedback.lightImpact();
+    setState(() { _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark; });
   }
 
   @override
   Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
-    Color glow = dominantColor ?? (isDark ? Colors.white : Colors.black);
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Stack(
-        children: [
-          // Reactive Ambient Glow System
-          ValueListenableBuilder<double>(
-            valueListenable: _scrollOffset,
-            builder: (context, offset, child) {
-              double inverseParallax = -(offset * 0.4);
-              double opacity = (1.0 - (offset / 350)).clamp(0.0, 1.0);
-              return Positioned(
-                top: -120 + inverseParallax,
-                left: -80,
-                right: -80,
-                child: AnimatedOpacity(
-                  duration: const Duration(milliseconds: 100),
-                  opacity: opacity,
-                  child: Container(
-                    height: 450,
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        colors: [
-                          glow.withOpacity(isDark ? 0.35 : 0.15),
-                          Colors.transparent
-                        ],
-                        radius: 0.8,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-
-          CustomScrollView(
-            controller: _scrollController,
-            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-            slivers: [
-              // Advanced Glass Morphism Navigation Bar
-              SliverPersistentHeader(
-                pinned: true,
-                delegate: _GlassHeaderDelegate(
-                  app: widget.app,
-                  scrollOffsetNotifier: _scrollOffset,
-                  safeAreaTop: MediaQuery.of(context).padding.top,
-                  isDark: isDark,
-                ),
-              ),
-
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Depth System & Micro Parallax
-                          ValueListenableBuilder<double>(
-                            valueListenable: _scrollOffset,
-                            builder: (context, offset, child) {
-                              double parallax = (offset * 0.15).clamp(0.0, 50.0);
-                              double shadowBlur = (40.0 - (offset * 0.15)).clamp(10.0, 40.0);
-                              double shadowOp = (0.5 - (offset * 0.002)).clamp(0.0, 0.5);
-                              return Transform.translate(
-                                offset: Offset(0, parallax),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(28),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: glow.withOpacity(shadowOp),
-                                        blurRadius: shadowBlur,
-                                        offset: const Offset(0, 15),
-                                      )
-                                    ],
-                                  ),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Hero(
-                              tag: 'icon_${widget.app.name}',
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(28),
-                                child: CachedNetworkImage(
-                                  imageUrl: widget.app.icon,
-                                  width: 118,
-                                  height: 118,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Reactive Title Transition
-                                ValueListenableBuilder<double>(
-                                  valueListenable: _scrollOffset,
-                                  builder: (context, offset, child) {
-                                    double moveUp = (offset * 0.35).clamp(0.0, 40.0);
-                                    double scale = (1.0 - (offset * 0.0015)).clamp(0.85, 1.0);
-                                    double opacity = (1.0 - (offset / 120)).clamp(0.0, 1.0);
-                                    return Transform.translate(
-                                      offset: Offset(0, -moveUp),
-                                      child: Transform.scale(
-                                        scale: scale,
-                                        alignment: Alignment.centerLeft,
-                                        child: Opacity(
-                                          opacity: opacity,
-                                          child: child,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        widget.app.name,
-                                        style: TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                                          letterSpacing: -0.6,
-                                          height: 1.1,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        "Version ${widget.app.version}",
-                                        style: const TextStyle(
-                                          fontSize: 15,
-                                          color: Colors.grey,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                // Morphing iOS 26 Button
-                                _MorphingGlassButton(app: widget.app, ctrl: widget.ctrl),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 40),
-
-                      _BlurredDivider(isDark: isDark),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          _buildInfoBlock("SIZE", widget.app.size, context),
-                          _buildInfoBlock("AGE", widget.app.age, context),
-                          _buildInfoBlock("CHART", widget.app.chart, context),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _BlurredDivider(isDark: isDark),
-                      const SizedBox(height: 24),
-
-                      const Text(
-                        "What's New",
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        "Version ${widget.app.version}\nIncludes latest bug fixes, performance improvements, and local smart caching.",
-                        style: TextStyle(
-                          color: isDark ? Colors.grey[300] : Colors.grey[800],
-                          height: 1.5,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 30),
-
-                      const Text(
-                        "Description",
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        widget.app.description,
-                        style: TextStyle(
-                          color: isDark ? Colors.grey[300] : Colors.grey[800],
-                          height: 1.5,
-                          fontSize: 16,
-                        ),
-                      ),
-                      const SizedBox(height: 120),
-                    ],
-                  ),
-                ),
-              )
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoBlock(String title, String value, BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: Colors.grey,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 19,
-            fontWeight: FontWeight.bold,
-            letterSpacing: -0.5,
-            color: Theme.of(context).primaryColor,
-          ),
-        ),
-      ],
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      themeMode: _themeMode,
+      theme: ThemeData(brightness: Brightness.light, fontFamily: ".SF Pro Text", scaffoldBackgroundColor: const Color(0xFFF2F2F7), cardColor: Colors.white, primaryColor: const Color(0xFF0A84FF)),
+      darkTheme: ThemeData(brightness: Brightness.dark, fontFamily: ".SF Pro Text", scaffoldBackgroundColor: Colors.black, cardColor: const Color(0xFF151515), primaryColor: const Color(0xFF0A84FF)),
+      home: StoreScreen(onThemeToggle: toggleTheme, isDark: _themeMode == ThemeMode.dark),
     );
   }
 }
 
-class _GlassHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final AppModel app;
-  final ValueNotifier<double> scrollOffsetNotifier;
-  final double safeAreaTop;
-  final bool isDark;
+class StoreScreen extends StatefulWidget {
+  final VoidCallback onThemeToggle; final bool isDark;
+  const StoreScreen({super.key, required this.onThemeToggle, required this.isDark});
+  @override
+  State<StoreScreen> createState() => _StoreScreenState();
+}
 
-  _GlassHeaderDelegate({
-    required this.app,
-    required this.scrollOffsetNotifier,
-    required this.safeAreaTop,
-    required this.isDark,
-  });
+class _StoreScreenState extends State<StoreScreen> with SingleTickerProviderStateMixin {
+  final StoreController _ctrl = StoreController();
+  late TabController _tabController;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
+  final List<String> categories = ["All", "Games", "Social", "Tweaks"];
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
-    return ValueListenableBuilder<double>(
-      valueListenable: scrollOffsetNotifier,
-      builder: (context, offset, _) {
-        double progress = (offset / 120).clamp(0.0, 1.0);
-        double blurValue = progress * 40.0;
-        double glassOpacity = progress * (isDark ? 0.55 : 0.65);
-        double borderOpacity = progress * 0.15;
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 4, vsync: this);
+    _tabController.addListener(() {
+      if (_isSearching) setState(() { _isSearching = false; _searchController.clear(); _ctrl.applyFilters(''); });
+    });
+    _ctrl.initStore();
+  }
 
-        return ClipRRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: blurValue, sigmaY: blurValue),
-            child: Container(
-              height: maxExtent,
-              decoration: BoxDecoration(
-                color: isDark
-                    ? Colors.black.withOpacity(glassOpacity)
-                    : Colors.white.withOpacity(glassOpacity),
-                border: Border(
-                  bottom: BorderSide(
-                    color: Colors.grey.withOpacity(borderOpacity),
-                    width: 0.5,
-                  ),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBody: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          return Stack(
+            children: [
+              TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildHomeTab(),
+                  _buildGenericTab("Favorites", _ctrl.allApps.where((a) => a.isFavoriteNotifier.value).toList(), 1),
+                  // 🔥 التعديل هنا: التطبيق لا يظهر في التحميلات إلا إذا كان مكتملاً 100% (DownloadState.downloaded)
+                  _buildGenericTab("Downloads", _ctrl.allApps.where((a) => a.stateNotifier.value == DownloadState.downloaded && !a.isTrashedNotifier.value).toList(), 2),
+                  _buildGenericTab("Trash", _ctrl.allApps.where((a) => a.isTrashedNotifier.value).toList(), 3),
+                ],
+              ),
+              Positioned(bottom: 30, left: 30, right: 30, child: _buildFloatingBottomNav()),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHomeTab() {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 140, collapsedHeight: 60, pinned: true, stretch: true, backgroundColor: Colors.transparent,
+          flexibleSpace: ClipRRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(
+                color: widget.isDark ? Colors.black.withOpacity(0.65) : Colors.white.withOpacity(0.65),
+                padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top + 10, left: 20, right: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        AppleBouncingButton(onTap: widget.onThemeToggle, child: Icon(widget.isDark ? CupertinoIcons.sun_max_fill : CupertinoIcons.moon_fill, color: widget.isDark ? Colors.white : Colors.black, size: 26)),
+                        Text("Store", style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color)),
+                        AppleBouncingButton(onTap: () { HapticFeedback.lightImpact(); setState(() => _isSearching = true); }, child: CircleAvatar(backgroundColor: widget.isDark ? Colors.white12 : Colors.black12, child: const Icon(CupertinoIcons.search, color: Color(0xFF0A84FF), size: 18))),
+                      ],
+                    ),
+                    if (_isSearching) ...[
+                      const SizedBox(height: 10),
+                      // 🔥 التعديل هنا: إضافة زر Done للبحث
+                      Row(
+                        children: [
+                          Expanded(child: CupertinoSearchTextField(controller: _searchController, style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color), onChanged: _ctrl.applyFilters)),
+                          const SizedBox(width: 8),
+                          AppleBouncingButton(
+                            onTap: () { HapticFeedback.lightImpact(); setState(() { _isSearching = false; _searchController.clear(); _ctrl.applyFilters(''); }); },
+                            child: const Text("Done", style: TextStyle(color: Color(0xFF0A84FF), fontWeight: FontWeight.bold, fontSize: 16)),
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        height: 35,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal, itemCount: categories.length,
+                          itemBuilder: (ctx, index) {
+                            bool isActive = _ctrl.activeCategory == categories[index];
+                            return AppleBouncingButton(
+                              onTap: () => _ctrl.setCategory(categories[index]),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200), margin: const EdgeInsets.only(right: 10), padding: const EdgeInsets.symmetric(horizontal: 16), alignment: Alignment.center,
+                                decoration: BoxDecoration(color: isActive ? Theme.of(context).textTheme.bodyLarge?.color : (widget.isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05)), borderRadius: BorderRadius.circular(20)),
+                                child: Text(categories[index], style: TextStyle(color: isActive ? Theme.of(context).scaffoldBackgroundColor : Colors.grey, fontWeight: FontWeight.bold, fontSize: 14)),
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    ]
+                  ],
                 ),
               ),
-              padding: EdgeInsets.only(top: safeAreaTop),
-              child: Stack(
+            ),
+          ),
+        ),
+        CupertinoSliverRefreshControl(onRefresh: () async { HapticFeedback.mediumImpact(); await _ctrl.initStore(isRefresh: true); }),
+        if (_ctrl.isLoading)
+          const SliverFillRemaining(child: Center(child: CupertinoActivityIndicator(radius: 15)))
+        else if (_ctrl.filteredApps.isEmpty)
+          const SliverFillRemaining(child: Center(child: Text("Empty here.", style: TextStyle(color: Colors.grey, fontSize: 16))))
+        else ...[
+          if (!_isSearching && _ctrl.activeCategory == "All") ...[
+            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 20, left: 20, bottom: 10), child: const Text("Trending Now", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)))),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 140,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal, physics: const BouncingScrollPhysics(), padding: const EdgeInsets.symmetric(horizontal: 10),
+                  itemCount: _ctrl.trendingApps.length, itemBuilder: (ctx, i) => _buildFeaturedCard(_ctrl.trendingApps[i]),
+                ),
+              ),
+            ),
+            SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.only(top: 30, left: 20, bottom: 10), child: const Text("All Apps", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)))),
+          ],
+          SliverList(delegate: SliverChildBuilderDelegate((context, i) => _buildListCell(_ctrl.filteredApps[i], 0), childCount: _ctrl.filteredApps.length)),
+        ],
+        const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+      ],
+    );
+  }
+
+  Widget _buildGenericTab(String title, List<AppModel> list, int tabIndex) {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 100, collapsedHeight: 60, pinned: true, stretch: true, backgroundColor: Colors.transparent,
+          flexibleSpace: ClipRRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+              child: Container(color: widget.isDark ? Colors.black.withOpacity(0.65) : Colors.white.withOpacity(0.65), alignment: Alignment.bottomLeft, padding: const EdgeInsets.only(left: 20, bottom: 16), child: Text(title, style: TextStyle(fontSize: 34, fontWeight: FontWeight.bold, color: Theme.of(context).textTheme.bodyLarge?.color))),
+            ),
+          ),
+        ),
+        if (list.isEmpty) const SliverFillRemaining(child: Center(child: Text("Empty here.", style: TextStyle(color: Colors.grey, fontSize: 16))))
+        else SliverList(delegate: SliverChildBuilderDelegate((context, i) => _buildListCell(list[i], tabIndex), childCount: list.length)),
+        const SliverPadding(padding: EdgeInsets.only(bottom: 120)),
+      ],
+    );
+  }
+
+  Widget _buildFeaturedCard(AppModel app) {
+    return AppleBouncingButton(
+      onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (context) => AppDetailsScreen(app: app, ctrl: _ctrl))),
+      child: Container(
+        width: 300, margin: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(color: Theme.of(context).cardColor, borderRadius: BorderRadius.circular(24), border: Border.all(color: widget.isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05))),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              ClipRRect(borderRadius: BorderRadius.circular(18), child: CachedNetworkImage(imageUrl: app.icon, width: 80, height: 80, fit: BoxFit.cover)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(app.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold), maxLines: 1), const SizedBox(height: 4),
+                    Text(app.description, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildListCell(AppModel app, int tabIndex) {
+    return AppleBouncingButton(
+      onTap: () => Navigator.push(context, CupertinoPageRoute(builder: (context) => AppDetailsScreen(app: app, ctrl: _ctrl))),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Hero(tag: 'icon_${app.name}', child: ClipRRect(borderRadius: BorderRadius.circular(18), child: CachedNetworkImage(imageUrl: app.icon, width: 70, height: 70, fit: BoxFit.cover))),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: AppleBouncingButton(
-                      onTap: () => Navigator.pop(context),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              CupertinoIcons.back,
-                              color: Theme.of(context).primaryColor,
-                              size: 28,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              "Store",
-                              style: TextStyle(
-                                color: Theme.of(context).primaryColor,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Align(
-                    alignment: Alignment.center,
-                    child: Opacity(
-                      opacity: progress,
-                      child: Transform.translate(
-                        offset: Offset(0, 15 * (1 - progress)),
-                        child: Text(
-                          app.name,
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  Text(app.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)), const SizedBox(height: 4),
+                  Text(app.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            ValueListenableBuilder<DownloadState>(
+              valueListenable: app.stateNotifier,
+              builder: (context, state, child) {
+                if (tabIndex == 3) {
+                  return Row(children: [ _btn("Restore", const Color(0xFF1E3A28), const Color(0xFF34C759), () => _ctrl.restoreFromTrash(app)), const SizedBox(width: 8), CircleAvatar(radius: 18, backgroundColor: Colors.red.withOpacity(0.15), child: AppleBouncingButton(onTap: () => _ctrl.deletePermanently(app), child: const Icon(CupertinoIcons.delete_solid, color: Colors.red, size: 18)))]);
+                } else if (tabIndex == 2) {
+                  return Row(children: [ _btn("Save", const Color(0xFF1E3A28), const Color(0xFF34C759), () => _ctrl.saveToFile(app)), const SizedBox(width: 8), CircleAvatar(radius: 18, backgroundColor: Colors.red.withOpacity(0.15), child: AppleBouncingButton(onTap: () => _ctrl.moveToTrash(app), child: const Icon(CupertinoIcons.trash, color: Colors.red, size: 18)))]);
+                }
+                
+                if (state == DownloadState.downloading || state == DownloadState.paused) {
+                   return Row(
+                     children: [
+                       AppleBouncingButton(onTap: () => state == DownloadState.paused ? _ctrl.start(app) : _ctrl.pause(app), child: CircleAvatar(radius: 15, backgroundColor: const Color(0xFF0A84FF), child: Icon(state == DownloadState.paused ? CupertinoIcons.play_fill : CupertinoIcons.pause_fill, color: Colors.white, size: 14))),
+                       const SizedBox(width: 6),
+                       AppleBouncingButton(onTap: () => _ctrl.cancel(app), child: CircleAvatar(radius: 15, backgroundColor: widget.isDark ? Colors.grey[800] : Colors.grey[300], child: const Icon(CupertinoIcons.stop_fill, color: Colors.red, size: 14))),
+                     ],
+                   );
+                } else if (state == DownloadState.downloaded) {
+                   // الزر الآن Save فقط!
+                   return _btn("SAVE", widget.isDark ? Colors.grey[800]! : Colors.grey[300]!, Colors.grey, () => _ctrl.saveToFile(app));
+                }
+                return _btn("GET", const Color(0xFF0A84FF), Colors.white, () => _ctrl.start(app));
+              }
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _btn(String text, Color bg, Color txtColor, VoidCallback onTap) {
+    return AppleBouncingButton(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(16)), child: Text(text, style: TextStyle(color: txtColor, fontWeight: FontWeight.bold, fontSize: 13))));
+  }
+
+  Widget _buildFloatingBottomNav() {
+    return AnimatedBuilder(
+      animation: _tabController,
+      builder: (context, child) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(40),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+            child: Container(
+              height: 65,
+              decoration: BoxDecoration(color: widget.isDark ? Colors.black.withOpacity(0.75) : Colors.white.withOpacity(0.85), borderRadius: BorderRadius.circular(40), border: Border.all(color: widget.isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05), width: 1)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _navItem(0, CupertinoIcons.square_grid_2x2_fill, CupertinoIcons.square_grid_2x2),
+                  _navItem(1, CupertinoIcons.heart_fill, CupertinoIcons.heart),
+                  _navItem(2, CupertinoIcons.folder_fill, CupertinoIcons.folder),
+                  _navItem(3, CupertinoIcons.trash_fill, CupertinoIcons.trash), 
                 ],
               ),
             ),
           ),
         );
-      },
+      }
     );
   }
 
-  @override
-  double get maxExtent => safeAreaTop + 44.0;
-  @override
-  double get minExtent => safeAreaTop + 44.0;
-  @override
-  bool shouldRebuild(covariant SliverPersistentHeaderDelegate oldDelegate) => true;
-}
-
-class _MorphingGlassButton extends StatelessWidget {
-  final AppModel app;
-  final StoreController ctrl;
-
-  const _MorphingGlassButton({
-    required this.app,
-    required this.ctrl,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    bool isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return RepaintBoundary(
-      child: ValueListenableBuilder<DownloadState>(
-        valueListenable: app.stateNotifier,
-        builder: (context, state, child) {
-          bool isDownloading = state == DownloadState.downloading || state == DownloadState.paused;
-          bool isDownloaded = state == DownloadState.downloaded;
-
-          return AppleBouncingButton(
-            onTap: () {
-              if (isDownloading) {
-                state == DownloadState.paused ? ctrl.start(app) : ctrl.pause(app);
-              } else if (isDownloaded) {
-                ctrl.saveToFile(app);
-              } else {
-                ctrl.start(app);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 350),
-              curve: Curves.easeOutCubic,
-              width: isDownloading ? 220 : 90,
-              height: 38,
-              decoration: BoxDecoration(
-                color: isDownloading
-                    ? (isDark ? const Color(0xFF1E1E1E) : const Color(0xFFE5E5EA))
-                    : (isDownloaded
-                        ? (isDark ? Colors.white24 : Colors.black12)
-                        : Theme.of(context).primaryColor),
-                borderRadius: BorderRadius.circular(isDownloading ? 24 : 20),
-                border: Border.all(
-                  color: Colors.white.withOpacity(isDark ? 0.08 : 0.3),
-                  width: 0.5,
-                ),
-                boxShadow: [
-                  if (!isDownloading && !isDownloaded)
-                    BoxShadow(
-                      color: Theme.of(context).primaryColor.withOpacity(0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
-                    )
-                ],
-              ),
-              child: Stack(
-                children: [
-                  // Glass Highlight Reflection
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 18,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.white.withOpacity(0.2),
-                            Colors.transparent
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Center(
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 250),
-                      switchInCurve: Curves.easeOutCubic,
-                      switchOutCurve: Curves.easeInCubic,
-                      child: isDownloading
-                          ? _buildProgressCapsule(context, isDark)
-                          : Text(
-                              isDownloaded ? "SAVE" : "GET",
-                              key: ValueKey(isDownloaded),
-                              style: TextStyle(
-                                color: isDownloaded
-                                    ? Theme.of(context).primaryColor
-                                    : Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                letterSpacing: -0.2,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildProgressCapsule(BuildContext context, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-      child: ValueListenableBuilder<double>(
-        valueListenable: app.progressNotifier,
-        builder: (context, progress, _) {
-          bool isPaused = app.stateNotifier.value == DownloadState.paused;
-          return Row(
-            key: const ValueKey("progress"),
-            children: [
-              Icon(
-                isPaused ? CupertinoIcons.play_fill : CupertinoIcons.pause_fill,
-                color: Theme.of(context).primaryColor,
-                size: 16,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 6,
-                    backgroundColor: isDark ? Colors.black26 : Colors.black12,
-                    valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: () => ctrl.cancel(app),
-                child: const Icon(
-                  CupertinoIcons.stop_fill,
-                  color: Colors.redAccent,
-                  size: 16,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _BlurredDivider extends StatelessWidget {
-  final bool isDark;
-  
-  const _BlurredDivider({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 1,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.transparent,
-            isDark ? Colors.white.withOpacity(0.15) : Colors.black.withOpacity(0.1),
-            Colors.transparent,
-          ],
-        ),
+  Widget _navItem(int index, IconData activeIcon, IconData inactiveIcon) {
+    bool isActive = _tabController.index == index;
+    return AppleBouncingButton(
+      onTap: () { HapticFeedback.selectionClick(); _tabController.animateTo(index); },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300), padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: isActive ? const Color(0xFF0A84FF).withOpacity(0.15) : Colors.transparent, shape: BoxShape.circle),
+        child: Icon(isActive ? activeIcon : inactiveIcon, color: isActive ? const Color(0xFF0A84FF) : Colors.grey, size: 24),
       ),
     );
   }
