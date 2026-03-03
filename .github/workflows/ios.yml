@@ -11,20 +11,22 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
-      - name: Flutter Clean
-        run: flutter clean
+      - run: flutter clean
+      - run: flutter pub get
 
-      - name: Get Dependencies
-        run: flutter pub get
+      # 🔥 تعطيل التوقيع داخل المشروع
+      - name: Disable Code Signing
+        run: |
+          sed -i '' 's/DEVELOPMENT_TEAM = .*;/DEVELOPMENT_TEAM = "";/' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGN_STYLE = Automatic;/CODE_SIGN_STYLE = Manual;/' ios/Runner.xcodeproj/project.pbxproj
+          sed -i '' 's/PROVISIONING_PROFILE_SPECIFIER = .*;/PROVISIONING_PROFILE_SPECIFIER = "";/' ios/Runner.xcodeproj/project.pbxproj
 
       - name: Build IPA (No Codesign)
         run: flutter build ipa --no-codesign
