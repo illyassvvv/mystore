@@ -1,4 +1,4 @@
-name: Build iOS Simulator
+name: Build IPA (No Signing)
 
 on:
   workflow_dispatch:
@@ -20,14 +20,17 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Show Flutter Version
-        run: flutter --version
-
       - name: Flutter Clean
         run: flutter clean
 
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build iOS (Simulator)
-        run: flutter build ios --debug --simulator
+      - name: Build IPA (No Codesign)
+        run: flutter build ipa --no-codesign
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-ipa
+          path: build/ios/ipa/*.ipa
