@@ -1,4 +1,4 @@
-name: Build IPA (Unsigned)
+name: Build IPA (No Signing)
 
 on:
   workflow_dispatch:
@@ -26,32 +26,11 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build iOS App (No Codesign)
-        run: flutter build ios --release --no-codesign
-
-      - name: Archive App (Force No Signing)
-        run: |
-          xcodebuild -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -archivePath build/Runner.xcarchive \
-            archive \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
-
-      - name: Export IPA
-        run: |
-          xcodebuild -exportArchive \
-            -archivePath build/Runner.xcarchive \
-            -exportOptionsPlist ios/ExportOptions.plist \
-            -exportPath build/ipa \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+      - name: Build IPA (No Codesign)
+        run: flutter build ipa --no-codesign
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: unsigned-ipa
-          path: build/ipa/*.ipa
+          path: build/ios/ipa/*.ipa
