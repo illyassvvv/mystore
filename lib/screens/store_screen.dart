@@ -336,7 +336,8 @@ class _SearchBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Featured card
+// Featured card — iOS 26 premium design
+// Large centered icon with gaussian glow, dark gradient bg, glass bottom bar
 // ─────────────────────────────────────────────────────────────────────────────
 class _FeaturedCard extends StatefulWidget {
   final AppModel app;
@@ -354,12 +355,13 @@ class _FeaturedCardState extends State<_FeaturedCard>
   late final AnimationController _ac;
   late final Animation<double> _scale;
 
+  // Rich dark gradients — each unique, none look like simple black
   static const _bgs = [
-    [Color(0xFF1A1A2E), Color(0xFF16213E)],
-    [Color(0xFF0F0C29), Color(0xFF302B63)],
-    [Color(0xFF000428), Color(0xFF004E92)],
-    [Color(0xFF1A0533), Color(0xFF330867)],
-    [Color(0xFF0D0D0D), Color(0xFF1C1C2E)],
+    [Color(0xFF0A0A1A), Color(0xFF0D1B3E)], // deep navy
+    [Color(0xFF0C0A1F), Color(0xFF1A0A3E)], // deep purple
+    [Color(0xFF0A1A0C), Color(0xFF0A2E18)], // deep forest
+    [Color(0xFF1A0A0A), Color(0xFF2E0A12)], // deep crimson
+    [Color(0xFF0A1420), Color(0xFF0A2032)], // deep teal
   ];
 
   @override
@@ -381,8 +383,7 @@ class _FeaturedCardState extends State<_FeaturedCard>
   Widget build(BuildContext context) {
     final app = widget.app;
     final t = widget.t;
-    final bi =
-        app.name.isNotEmpty ? app.name.codeUnitAt(0) % _bgs.length : 0;
+    final bi = app.name.isNotEmpty ? app.name.codeUnitAt(0) % _bgs.length : 0;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -395,113 +396,186 @@ class _FeaturedCardState extends State<_FeaturedCard>
       child: ScaleTransition(
         scale: _scale,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // Gradient background
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: _bgs[bi],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: _bgs[bi],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-
-              // Blurred icon atmosphere
-              if (app.icon.isNotEmpty)
-                Positioned.fill(
-                  child: Opacity(
-                    opacity: 0.14,
-                    child: CachedNetworkImage(
-                      imageUrl: app.icon,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // ── Soft gaussian glow halo behind icon ─────────────────────
+                if (app.icon.isNotEmpty)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 68,
+                    child: Center(
+                      child: ImageFiltered(
+                        imageFilter:
+                            ImageFilter.blur(sigmaX: 38, sigmaY: 38),
+                        child: CachedNetworkImage(
+                          imageUrl: app.icon,
+                          width: 110,
+                          height: 110,
+                          fit: BoxFit.contain,
+                          errorWidget: (_, __, ___) =>
+                              const SizedBox.shrink(),
+                        ),
+                      ),
                     ),
                   ),
-                ),
 
-              // Glass bottom bar
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                    child: Container(
-                      color: Colors.black.withOpacity(0.38),
-                      padding:
-                          const EdgeInsets.fromLTRB(14, 12, 14, 14),
-                      child: Row(
-                        children: [
-                          Hero(
-                            tag: 'app_icon_${app.id}',
-                            child: AppIcon(
-                                iconUrl: app.icon,
-                                name: app.name,
-                                size: 50,
-                                radius: 12),
+                // ── Sharp icon centred, elevated with shadow ─────────────────
+                if (app.icon.isNotEmpty)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 68,
+                    child: Center(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.55),
+                              blurRadius: 32,
+                              spreadRadius: -2,
+                              offset: const Offset(0, 14),
+                            ),
+                          ],
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: CachedNetworkImage(
+                            imageUrl: app.icon,
+                            width: 88,
+                            height: 88,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => AppIcon(
+                              iconUrl: '',
+                              name: app.name,
+                              size: 88,
+                              radius: 24,
+                            ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(app.name,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // ── Glass bottom info bar ────────────────────────────────────
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          border: Border(
+                            top: BorderSide(
+                              color: Colors.white.withOpacity(0.12),
+                              width: 0.5,
+                            ),
+                          ),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(14, 11, 14, 13),
+                        child: Row(
+                          children: [
+                            Hero(
+                              tag: 'app_icon_${app.id}',
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(11),
+                                child: CachedNetworkImage(
+                                  imageUrl: app.icon,
+                                  width: 44,
+                                  height: 44,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => AppIcon(
+                                    iconUrl: '',
+                                    name: app.name,
+                                    size: 44,
+                                    radius: 11,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 11),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(app.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: -0.2)),
+                                  Text(
+                                    app.developer.isNotEmpty
+                                        ? app.developer
+                                        : app.category,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: GoogleFonts.inter(
-                                        color: Colors.white,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        letterSpacing: -0.2)),
-                                Text(
-                                  app.developer.isNotEmpty
-                                      ? app.developer
-                                      : app.category,
-                                  style: GoogleFonts.inter(
-                                      color:
-                                          Colors.white.withOpacity(0.65),
-                                      fontSize: 12),
-                                ),
-                              ],
+                                        color: Colors.white.withOpacity(0.55),
+                                        fontSize: 11),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {},
-                            child: GetButton(app: app),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {},
+                              child: GetButton(app: app),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
 
-              // FEATURED badge
-              Positioned(
-                top: 12,
-                left: 14,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.accent.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(6),
+                // ── FEATURED badge ───────────────────────────────────────────
+                Positioned(
+                  top: 12,
+                  left: 14,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(7),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withOpacity(0.85),
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        child: Text('FEATURED',
+                            style: GoogleFonts.inter(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.9)),
+                      ),
+                    ),
                   ),
-                  child: Text('FEATURED',
-                      style: GoogleFonts.inter(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8)),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
