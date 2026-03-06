@@ -5,9 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_model.dart';
-import '../models/download_task.dart';
 import '../providers/apps_provider.dart';
-import '../providers/downloads_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -21,8 +19,7 @@ class AppDetailsScreen extends StatefulWidget {
   State<AppDetailsScreen> createState() => _AppDetailsScreenState();
 }
 
-class _AppDetailsScreenState extends State<AppDetailsScreen>
-    with SingleTickerProviderStateMixin {
+class _AppDetailsScreenState extends State<AppDetailsScreen> {
   final _scroll = ScrollController();
   double _headerOpacity = 0.0;
   bool _descExpanded = false;
@@ -50,53 +47,41 @@ class _AppDetailsScreenState extends State<AppDetailsScreen>
   bool _isArabic(String s) =>
       s.isNotEmpty && RegExp(r'[\u0600-\u06FF]').hasMatch(s);
 
-  // Detect URLs and wrap in TapGestureRecognizer
-  Widget _buildDescriptionText(String text, AppTheme t) {
+  /// Render description with clickable URLs
+  Widget _buildDescription(String text, AppTheme t) {
     final isAr = _isArabic(text);
-    final urlRegex = RegExp(
-        r'https?://[^\s]+',
-        caseSensitive: false);
-    final matches = urlRegex.allMatches(text).toList();
+    final urlRx = RegExp(r'https?://[^\s]+', caseSensitive: false);
+    final matches = urlRx.allMatches(text).toList();
 
-    if (matches.isEmpty) {
-      return Text(
-        text,
-        style: isAr
-            ? GoogleFonts.cairo(
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
-                color: t.text.withOpacity(0.88),
-                height: 1.6)
-            : t.sf(
-                size: 15,
-                color: t.text.withOpacity(0.88),
-                height: 1.65,
-                letterSpacing: 0.3),
-        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-      );
-    }
-
-    // Build rich text with clickable links
-    final spans = <InlineSpan>[];
-    int last = 0;
     final baseStyle = isAr
         ? GoogleFonts.cairo(
             fontSize: 16,
             fontWeight: FontWeight.w400,
-            color: t.text.withOpacity(0.88),
+            color: t.text.withOpacity(0.9),
             height: 1.6)
         : t.sf(
             size: 15,
-            color: t.text.withOpacity(0.88),
-            height: 1.65,
-            letterSpacing: 0.3);
+            color: t.text.withOpacity(0.9),
+            height: 1.68,
+            letterSpacing: 0.25);
+
+    if (matches.isEmpty) {
+      return Text(text,
+          style: baseStyle,
+          textDirection: isAr ? TextDirection.rtl : TextDirection.ltr);
+    }
+
+    final spans = <InlineSpan>[];
+    int last = 0;
     final linkStyle = baseStyle.copyWith(
-        color: AppColors.accent,
-        decoration: TextDecoration.underline);
+        color: const Color(0xFF0A84FF),
+        decoration: TextDecoration.underline,
+        decorationColor: const Color(0xFF0A84FF));
 
     for (final m in matches) {
       if (m.start > last) {
-        spans.add(TextSpan(text: text.substring(last, m.start), style: baseStyle));
+        spans.add(TextSpan(
+            text: text.substring(last, m.start), style: baseStyle));
       }
       final url = m.group(0)!;
       spans.add(TextSpan(
@@ -113,7 +98,8 @@ class _AppDetailsScreenState extends State<AppDetailsScreen>
       last = m.end;
     }
     if (last < text.length) {
-      spans.add(TextSpan(text: text.substring(last), style: baseStyle));
+      spans.add(
+          TextSpan(text: text.substring(last), style: baseStyle));
     }
 
     return SelectableText.rich(
@@ -127,234 +113,223 @@ class _AppDetailsScreenState extends State<AppDetailsScreen>
     final app = widget.app;
     final t = AppTheme(context.watch<ThemeProvider>().isDark);
     final allApps = context.watch<AppsProvider>().allApps;
-    final dl = context.watch<DownloadsProvider>();
-    final task = dl.getTask(app.id);
     final similar = allApps.where((a) => a.id != app.id).take(12).toList();
     final isAr = _isArabic(app.description);
     final isFav = context.watch<AppsProvider>().isFav(app.id);
 
     return Scaffold(
       backgroundColor: t.bg,
-      body: Stack(
-        children: [
-          CustomScrollView(
-            controller: _scroll,
-            slivers: [
-              // ── Reactive blurring app bar ──────────────────
-              SliverAppBar(
-                backgroundColor: Colors.transparent,
-                surfaceTintColor: Colors.transparent,
-                pinned: true,
-                elevation: 0,
-                leading: _NavButton(
-                  icon: Icons.arrow_back_ios_new_rounded,
-                  color: AppColors.accent,
-                  onTap: () => Navigator.pop(context),
-                  t: t,
-                ),
-                actions: [
-                  _NavButton(
-                    icon: isFav
-                        ? Icons.favorite_rounded
-                        : Icons.favorite_border_rounded,
-                    color: isFav ? AppColors.red : t.textSec,
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      context.read<AppsProvider>().toggleFav(app.id);
-                    },
-                    t: t,
-                  ),
-                  const SizedBox(width: 4),
-                ],
-                flexibleSpace: AnimatedOpacity(
-                  opacity: _headerOpacity,
-                  duration: const Duration(milliseconds: 80),
-                  child: ClipRect(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(
-                          sigmaX: _headerOpacity * 24,
-                          sigmaY: _headerOpacity * 24),
-                      child: Container(
-                        color: t.bg.withOpacity(0.82 * _headerOpacity),
-                        alignment: Alignment.bottomCenter,
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: Text(app.name,
-                            style: t.sf(
-                                size: 17,
-                                weight: FontWeight.w600)),
-                      ),
-                    ),
+      body: CustomScrollView(
+        controller: _scroll,
+        slivers: [
+          // ── Blurring sticky app bar ────────────────────────────────────────
+          SliverAppBar(
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            pinned: true,
+            elevation: 0,
+            automaticallyImplyLeading: false,
+            leading: _CircleNavBtn(
+              icon: Icons.arrow_back_ios_new_rounded,
+              color: AppColors.accent,
+              onTap: () => Navigator.pop(context),
+              t: t,
+            ),
+            actions: [
+              _CircleNavBtn(
+                icon: isFav
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
+                color: isFav ? AppColors.red : t.textSec,
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  context.read<AppsProvider>().toggleFav(app.id);
+                },
+                t: t,
+              ),
+              const SizedBox(width: 6),
+            ],
+            flexibleSpace: AnimatedOpacity(
+              opacity: _headerOpacity,
+              duration: const Duration(milliseconds: 80),
+              child: ClipRect(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                      sigmaX: _headerOpacity * 26,
+                      sigmaY: _headerOpacity * 26),
+                  child: Container(
+                    color: t.bg.withOpacity(0.82 * _headerOpacity),
+                    alignment: Alignment.bottomCenter,
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Text(app.name,
+                        style: t.sf(size: 17, weight: FontWeight.w600)),
                   ),
                 ),
               ),
+            ),
+          ),
 
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Icon + name header ─────────────────────────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // ── Hero icon + name row ───────────────
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Hero(
-                            tag: 'app_icon_${app.id}',
-                            child: Container(
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(24),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.3),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, 8),
-                                    spreadRadius: -4,
-                                  ),
-                                ],
-                              ),
-                              child: AppIcon(
-                                  iconUrl: app.icon,
-                                  name: app.name,
-                                  size: 110,
-                                  radius: 24),
-                            ),
+                      // Hero with drop shadow
+                      Hero(
+                        tag: 'app_icon_${app.id}',
+                        flightShuttleBuilder: (_, anim, __, ___, ____) =>
+                            AnimatedBuilder(
+                          animation: anim,
+                          builder: (_, child) => Transform.scale(
+                            scale: 0.6 + 0.4 * anim.value,
+                            child: child,
                           ),
-                          const SizedBox(width: 18),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(app.name,
-                                    style: t.sf(
-                                        size: 22,
-                                        weight: FontWeight.w700,
-                                        letterSpacing: -0.3)),
-                                if (app.developer.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(app.developer,
-                                      style: t.sf(
-                                          size: 13,
-                                          color: t.textSec)),
-                                ],
-                                const SizedBox(height: 4),
-                                _CategoryChip(
-                                    label: app.category, t: t),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // ── Download button (CRITICAL FIX lives in GetButton) ──
-                      GetButton(app: app, large: true),
-
-                      const SizedBox(height: 32),
-
-                      // ── Description ───────────────────────
-                      if (app.description.isNotEmpty) ...[
-                        _SectionTitle(title: 'Description', t: t),
-                        const SizedBox(height: 12),
-                        _GlassSection(
-                          t: t,
-                          child: Column(
-                            crossAxisAlignment: isAr
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            children: [
-                              AnimatedCrossFade(
-                                duration:
-                                    const Duration(milliseconds: 280),
-                                crossFadeState: _descExpanded
-                                    ? CrossFadeState.showSecond
-                                    : CrossFadeState.showFirst,
-                                firstChild: _buildDescriptionText(
-                                  app.description.length > 200 &&
-                                          !_descExpanded
-                                      ? '${app.description.substring(0, 200)}…'
-                                      : app.description,
-                                  t,
-                                ),
-                                secondChild:
-                                    _buildDescriptionText(app.description, t),
-                              ),
-                              if (app.description.length > 200) ...[
-                                const SizedBox(height: 10),
-                                GestureDetector(
-                                  onTap: () => setState(
-                                      () => _descExpanded = !_descExpanded),
-                                  child: Text(
-                                    _descExpanded ? 'Show less' : 'Show more',
-                                    style: t.sf(
-                                        size: 13,
-                                        color: AppColors.accent,
-                                        weight: FontWeight.w500),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                          child: AppIcon(
+                              iconUrl: app.icon,
+                              name: app.name,
+                              size: 110,
+                              radius: 24),
                         ),
-                        const SizedBox(height: 28),
-                      ],
-
-                      // ── Information card ───────────────────
-                      _SectionTitle(title: 'Information', t: t),
-                      const SizedBox(height: 12),
-                      _GlassSection(
-                        t: t,
-                        padding: EdgeInsets.zero,
-                        child: Column(
-                          children: [
-                            _InfoRow(
-                                label: 'Version',
-                                value: app.version,
-                                t: t),
-                            _Divider(t: t),
-                            _InfoRow(
-                                label: 'Size', value: app.size, t: t),
-                            _Divider(t: t),
-                            _InfoRow(
-                                label: 'Category',
-                                value: app.category,
-                                t: t),
-                            if (app.developer.isNotEmpty) ...[
-                              _Divider(t: t),
-                              _InfoRow(
-                                  label: 'Developer',
-                                  value: app.developer,
-                                  t: t),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.32),
+                                blurRadius: 28,
+                                offset: const Offset(0, 10),
+                                spreadRadius: -6,
+                              ),
                             ],
+                          ),
+                          child: AppIcon(
+                              iconUrl: app.icon,
+                              name: app.name,
+                              size: 110,
+                              radius: 24),
+                        ),
+                      ),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(app.name,
+                                style: t.sf(
+                                    size: 22,
+                                    weight: FontWeight.w700,
+                                    letterSpacing: -0.4)),
+                            if (app.developer.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(app.developer,
+                                  style: t.sf(size: 13, color: t.textSec)),
+                            ],
+                            const SizedBox(height: 6),
+                            _CategoryBadge(label: app.category, t: t),
                           ],
                         ),
                       ),
-
-                      // ── More Apps ──────────────────────────
-                      if (similar.isNotEmpty) ...[
-                        const SizedBox(height: 32),
-                        _SectionTitle(title: 'More Apps', t: t),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          height: 128,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: similar.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 16),
-                            itemBuilder: (ctx, i) {
-                              final a = similar[i];
-                              return _SimilarAppItem(app: a, t: t);
-                            },
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 44),
                     ],
                   ),
-                ),
+
+                  const SizedBox(height: 24),
+
+                  // ── Download button (CRITICAL: GetButton large=true) ────────
+                  GetButton(app: app, large: true),
+
+                  const SizedBox(height: 32),
+
+                  // ── Description ────────────────────────────────────────────
+                  if (app.description.isNotEmpty) ...[
+                    _SectionHeader(title: 'Description', t: t),
+                    const SizedBox(height: 12),
+                    _GlassCard(
+                      t: t,
+                      child: Column(
+                        crossAxisAlignment: isAr
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          AnimatedCrossFade(
+                            duration: const Duration(milliseconds: 280),
+                            sizeCurve: Curves.easeOut,
+                            crossFadeState: _descExpanded
+                                ? CrossFadeState.showSecond
+                                : CrossFadeState.showFirst,
+                            firstChild: _buildDescription(
+                              app.description.length > 220 && !_descExpanded
+                                  ? '${app.description.substring(0, 220)}…'
+                                  : app.description,
+                              t,
+                            ),
+                            secondChild:
+                                _buildDescription(app.description, t),
+                          ),
+                          if (app.description.length > 220) ...[
+                            const SizedBox(height: 10),
+                            GestureDetector(
+                              onTap: () => setState(
+                                  () => _descExpanded = !_descExpanded),
+                              child: Text(
+                                _descExpanded ? 'Show less' : 'Show more',
+                                style: t.sf(
+                                    size: 13,
+                                    color: AppColors.accent,
+                                    weight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                  ],
+
+                  // ── Information ────────────────────────────────────────────
+                  _SectionHeader(title: 'Information', t: t),
+                  const SizedBox(height: 12),
+                  _GlassCard(
+                    t: t,
+                    padding: EdgeInsets.zero,
+                    child: Column(children: [
+                      _InfoRow(label: 'Version', value: app.version, t: t),
+                      _Sep(t: t),
+                      _InfoRow(label: 'Size', value: app.size, t: t),
+                      _Sep(t: t),
+                      _InfoRow(label: 'Category', value: app.category, t: t),
+                      if (app.developer.isNotEmpty) ...[
+                        _Sep(t: t),
+                        _InfoRow(
+                            label: 'Developer', value: app.developer, t: t),
+                      ],
+                    ]),
+                  ),
+
+                  // ── More Apps ──────────────────────────────────────────────
+                  if (similar.isNotEmpty) ...[
+                    const SizedBox(height: 32),
+                    _SectionHeader(title: 'More Apps', t: t),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 132,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: similar.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: 16),
+                        itemBuilder: (ctx, i) =>
+                            _MoreAppItem(app: similar[i], t: t),
+                      ),
+                    ),
+                  ],
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -362,16 +337,16 @@ class _AppDetailsScreenState extends State<AppDetailsScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Reusable sub-widgets
-// ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-widgets
+// ─────────────────────────────────────────────────────────────────────────────
 
-class _NavButton extends StatelessWidget {
+class _CircleNavBtn extends StatelessWidget {
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
   final AppTheme t;
-  const _NavButton(
+  const _CircleNavBtn(
       {required this.icon,
       required this.color,
       required this.onTap,
@@ -383,23 +358,22 @@ class _NavButton extends StatelessWidget {
       padding: const EdgeInsets.all(10),
       child: GestureDetector(
         onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
+        child: Container(
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: t.surface.withOpacity(0.85),
+            color: t.surface.withOpacity(0.88),
             shape: BoxShape.circle,
             border: Border.all(color: t.glassBorder, width: 0.5),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withOpacity(0.12),
                   blurRadius: 8,
                   offset: const Offset(0, 2))
             ],
           ),
           child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
+            duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, anim) =>
                 ScaleTransition(scale: anim, child: child),
             child: Icon(icon, key: ValueKey(color), color: color, size: 17),
@@ -410,10 +384,10 @@ class _NavButton extends StatelessWidget {
   }
 }
 
-class _CategoryChip extends StatelessWidget {
+class _CategoryBadge extends StatelessWidget {
   final String label;
   final AppTheme t;
-  const _CategoryChip({required this.label, required this.t});
+  const _CategoryBadge({required this.label, required this.t});
 
   @override
   Widget build(BuildContext context) {
@@ -421,7 +395,7 @@ class _CategoryChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
       decoration: BoxDecoration(
-        color: AppColors.accent.withOpacity(0.12),
+        color: AppColors.accent.withOpacity(0.13),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(label,
@@ -433,44 +407,42 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
-class _SectionTitle extends StatelessWidget {
+class _SectionHeader extends StatelessWidget {
   final String title;
   final AppTheme t;
-  const _SectionTitle({required this.title, required this.t});
+  const _SectionHeader({required this.title, required this.t});
 
   @override
-  Widget build(BuildContext context) {
-    return Text(title,
-        style: t.sf(size: 20, weight: FontWeight.w700, letterSpacing: -0.2));
-  }
+  Widget build(BuildContext context) => Text(title,
+      style: t.sf(size: 20, weight: FontWeight.w700, letterSpacing: -0.3));
 }
 
-/// Glass-blur card container consistent across the details page
-class _GlassSection extends StatelessWidget {
+/// Glass-blur content card — shared design token for description & info
+class _GlassCard extends StatelessWidget {
   final AppTheme t;
   final Widget child;
   final EdgeInsetsGeometry? padding;
-  const _GlassSection(
-      {required this.t, required this.child, this.padding});
+  const _GlassCard({required this.t, required this.child, this.padding});
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
         child: Container(
           width: double.infinity,
           decoration: BoxDecoration(
             color: t.isDark
-                ? const Color(0x0DFFFFFF)
-                : Colors.white.withOpacity(0.72),
+                ? const Color(0x0DFFFFFF) // rgba(255,255,255,0.05)
+                : Colors.white.withOpacity(0.75),
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-                color: t.isDark
-                    ? const Color(0x14FFFFFF)
-                    : const Color(0x1A000000),
-                width: 0.75),
+              color: t.isDark
+                  ? const Color(0x14FFFFFF) // rgba(255,255,255,0.08)
+                  : const Color(0x1A000000),
+              width: 0.75,
+            ),
           ),
           padding: padding ?? const EdgeInsets.all(18),
           child: child,
@@ -506,25 +478,24 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _Divider extends StatelessWidget {
+class _Sep extends StatelessWidget {
   final AppTheme t;
-  const _Divider({required this.t});
-
+  const _Sep({required this.t});
   @override
   Widget build(BuildContext context) =>
       Divider(height: 1, color: t.separator, indent: 16);
 }
 
-class _SimilarAppItem extends StatefulWidget {
+class _MoreAppItem extends StatefulWidget {
   final AppModel app;
   final AppTheme t;
-  const _SimilarAppItem({required this.app, required this.t});
+  const _MoreAppItem({required this.app, required this.t});
 
   @override
-  State<_SimilarAppItem> createState() => _SimilarAppItemState();
+  State<_MoreAppItem> createState() => _MoreAppItemState();
 }
 
-class _SimilarAppItemState extends State<_SimilarAppItem>
+class _MoreAppItemState extends State<_MoreAppItem>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ac;
   late final Animation<double> _scale;
@@ -533,9 +504,9 @@ class _SimilarAppItemState extends State<_SimilarAppItem>
   void initState() {
     super.initState();
     _ac = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 120));
-    _scale = Tween(begin: 1.0, end: 0.93)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
+        vsync: this, duration: const Duration(milliseconds: 130));
+    _scale = Tween(begin: 1.0, end: 0.93).animate(
+        CurvedAnimation(parent: _ac, curve: Curves.easeOut));
   }
 
   @override
@@ -557,12 +528,11 @@ class _SimilarAppItemState extends State<_SimilarAppItem>
           context,
           PageRouteBuilder(
             pageBuilder: (_, anim, __) => AppDetailsScreen(app: a),
-            transitionsBuilder: (_, anim, __, child) =>
-                FadeTransition(
-                    opacity: CurvedAnimation(
-                        parent: anim, curve: Curves.easeOut),
-                    child: child),
-            transitionDuration: const Duration(milliseconds: 250),
+            transitionsBuilder: (_, anim, __, child) => FadeTransition(
+                opacity:
+                    CurvedAnimation(parent: anim, curve: Curves.easeOut),
+                child: child),
+            transitionDuration: const Duration(milliseconds: 240),
           ),
         );
       },
@@ -570,16 +540,13 @@ class _SimilarAppItemState extends State<_SimilarAppItem>
       child: ScaleTransition(
         scale: _scale,
         child: SizedBox(
-          width: 80,
+          width: 82,
           child: Column(
             children: [
               Hero(
                 tag: 'app_icon_${a.id}',
                 child: AppIcon(
-                    iconUrl: a.icon,
-                    name: a.name,
-                    size: 62,
-                    radius: 14),
+                    iconUrl: a.icon, name: a.name, size: 62, radius: 14),
               ),
               const SizedBox(height: 6),
               Text(a.name,
