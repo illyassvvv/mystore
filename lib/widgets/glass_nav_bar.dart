@@ -43,20 +43,14 @@ class GlassNavBar extends StatelessWidget {
     final t = AppTheme(context.watch<ThemeProvider>().isDark);
     final activeCount =
         dl.tasks.where((tk) => tk.status == DlStatus.downloading).length;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
-    // Total nav bar area height so opaque blocker covers it fully
-    final navAreaHeight = 64.0 + bottomPad + 20.0;
 
-    // FIX 4: Single Positioned returned directly so it works inside parent Stack.
-    // Opaque background baked into the Container so hero flights are painted over.
     return Positioned(
       bottom: 0,
       left: 0,
       right: 0,
-      child: Container(
-        // Opaque base — covers hero flight path beneath the nav bar
-        color: t.isDark ? Colors.black : const Color(0xFFF2F2F7),
-        padding: EdgeInsets.fromLTRB(14, 8, 14, bottomPad + 10),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+            14, 0, 14, MediaQuery.of(context).padding.bottom + 10),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(30),
           child: BackdropFilter(
@@ -79,7 +73,8 @@ class GlassNavBar extends StatelessWidget {
                   ),
                 ],
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: _items.asMap().entries.map((e) {
