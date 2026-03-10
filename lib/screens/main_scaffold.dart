@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../screens/store_screen.dart';
 import '../screens/favorites_screen.dart';
@@ -37,22 +36,18 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   void _goTo(int i) {
     setState(() => _idx = i);
-    _pc.animateToPage(
-      i,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOutCubic,
-    );
+    _pc.animateToPage(i,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
       body: Stack(
         children: [
           PageView(
             controller: _pc,
-            physics: const NeverScrollableScrollPhysics(),
             onPageChanged: (i) => setState(() => _idx = i),
             children: _pages,
           ),
