@@ -1,7 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/downloads_provider.dart';
 import '../theme/app_theme.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -19,14 +22,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   Widget build(BuildContext context) {
     super.build(context);
     final themeP = context.watch<ThemeProvider>();
+    final dl = context.watch<DownloadsProvider>();
     final t = AppTheme(themeP.isDark);
+    final completedCount =
+        dl.tasks.where((tk) => tk.status.name == 'completed').length;
 
     return Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(
         bottom: false,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 130),
+          physics: const BouncingScrollPhysics(),
           children: [
             Text('Settings',
                 style: t.sf(size: 28, weight: FontWeight.w800)),
@@ -48,11 +55,40 @@ class _SettingsScreenState extends State<SettingsScreen>
                   subtitle: themeP.isDark ? 'On' : 'Off',
                   value: themeP.isDark,
                   t: t,
-                  onChanged: (_) => themeP.toggle(),
+                  onChanged: (_) {
+                    HapticFeedback.lightImpact();
+                    themeP.toggle();
+                  },
+                  isLast: true,
                 ),
               ],
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
+
+            // ── Storage ────────────────────────────────────────────────────
+            _SectionLabel(title: 'Storage', t: t),
+            _GlassGroup(
+              t: t,
+              children: [
+                _InfoRow(
+                  icon: Icons.download_done_rounded,
+                  iconColor: AppColors.green,
+                  label: 'Completed Downloads',
+                  value: '$completedCount',
+                  t: t,
+                  isLast: false,
+                ),
+                _InfoRow(
+                  icon: Icons.pending_rounded,
+                  iconColor: AppColors.accent,
+                  label: 'Active Downloads',
+                  value: '${dl.activeCount}',
+                  t: t,
+                  isLast: true,
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
 
             // ── About ──────────────────────────────────────────────────────
             _SectionLabel(title: 'About', t: t),
@@ -71,7 +107,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   icon: Icons.auto_awesome_rounded,
                   iconColor: const Color(0xFFFF9F0A),
                   label: 'Design',
-                  value: 'iOS 26 Glassmorphism',
+                  value: 'iOS 26 Glass',
                   t: t,
                   isLast: false,
                 ),
@@ -93,7 +129,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ],
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
 
             // ── Data Source ────────────────────────────────────────────────
             _SectionLabel(title: 'Data Source', t: t),
@@ -125,16 +161,23 @@ class _GlassGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+        filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
         child: Container(
           decoration: BoxDecoration(
             color: t.isDark
                 ? const Color(0xFF1C1C1E)
-                : Colors.white.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(16),
+                : Colors.white.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(18),
             border: Border.all(color: t.glassBorder, width: 0.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(t.isDark ? 0.15 : 0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Column(children: children),
         ),
@@ -169,13 +212,14 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final AppTheme t;
   final bool isLast;
-  const _InfoRow(
-      {required this.icon,
-      required this.iconColor,
-      required this.label,
-      required this.value,
-      required this.t,
-      required this.isLast});
+  const _InfoRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+    required this.t,
+    required this.isLast,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -186,25 +230,24 @@ class _InfoRow extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: iconColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(9),
                 ),
-                child: Icon(icon, color: iconColor, size: 16),
+                child: Icon(icon, color: iconColor, size: 17),
               ),
               const SizedBox(width: 12),
               Expanded(
                   child: Text(label,
                       style: t.sf(size: 14, weight: FontWeight.w500))),
               if (value.isNotEmpty)
-                Text(value, style: t.sf(size: 13, color: t.textSec)),
+                Text(value, style: t.sf(size: 14, color: t.textSec)),
             ],
           ),
         ),
-        if (!isLast)
-          Divider(height: 1, color: t.separator, indent: 52),
+        if (!isLast) Divider(height: 1, color: t.separator, indent: 56),
       ],
     );
   }
@@ -218,41 +261,49 @@ class _ToggleRow extends StatelessWidget {
   final bool value;
   final AppTheme t;
   final ValueChanged<bool> onChanged;
-  const _ToggleRow(
-      {required this.icon,
-      required this.iconColor,
-      required this.label,
-      required this.subtitle,
-      required this.value,
-      required this.t,
-      required this.onChanged});
+  final bool isLast;
+  const _ToggleRow({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.subtitle,
+    required this.value,
+    required this.t,
+    required this.onChanged,
+    required this.isLast,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: iconColor, size: 16),
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, color: iconColor, size: 17),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: Text(label,
+                      style: t.sf(size: 14, weight: FontWeight.w500))),
+              Switch.adaptive(
+                value: value,
+                onChanged: onChanged,
+                activeColor: AppColors.accent,
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Text(label,
-                  style: t.sf(size: 14, weight: FontWeight.w500))),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeColor: AppColors.accent,
-          ),
-        ],
-      ),
+        ),
+        if (!isLast) Divider(height: 1, color: t.separator, indent: 56),
+      ],
     );
   }
 }
