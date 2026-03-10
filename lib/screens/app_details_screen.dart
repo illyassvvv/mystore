@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/app_model.dart';
 import '../providers/apps_provider.dart';
+import '../providers/downloads_provider.dart';
 import '../providers/theme_provider.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon.dart';
@@ -33,7 +35,7 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
 
   void _onScroll() {
     final o = (_scroll.offset / 90).clamp(0.0, 1.0);
-    if ((o - _headerOpacity).abs() > 0.008) {
+    if ((o - _headerOpacity).abs() > 0.006) {
       setState(() => _headerOpacity = o);
     }
   }
@@ -58,7 +60,7 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
             fontSize: 16,
             fontWeight: FontWeight.w400,
             color: t.text.withOpacity(0.9),
-            height: 1.6)
+            height: 1.7)
         : t.sf(
             size: 15,
             color: t.text.withOpacity(0.9),
@@ -80,8 +82,8 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
 
     for (final m in matches) {
       if (m.start > last) {
-        spans.add(TextSpan(
-            text: text.substring(last, m.start), style: baseStyle));
+        spans.add(
+            TextSpan(text: text.substring(last, m.start), style: baseStyle));
       }
       final url = m.group(0)!;
       spans.add(TextSpan(
@@ -116,10 +118,11 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
     final isAr = _isArabic(app.description);
     final isFav = context.watch<AppsProvider>().isFav(app.id);
 
-    return Scaffold(
+    return CupertinoPageScaffold(
       backgroundColor: t.bg,
-      body: CustomScrollView(
+      child: CustomScrollView(
         controller: _scroll,
+        physics: const BouncingScrollPhysics(),
         slivers: [
           // ── Blurring sticky app bar ──────────────────────────────────────
           SliverAppBar(
@@ -154,8 +157,8 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
               child: ClipRect(
                 child: BackdropFilter(
                   filter: ImageFilter.blur(
-                      sigmaX: _headerOpacity * 26,
-                      sigmaY: _headerOpacity * 26),
+                      sigmaX: _headerOpacity * 28,
+                      sigmaY: _headerOpacity * 28),
                   child: Container(
                     color: t.bg.withOpacity(0.82 * _headerOpacity),
                     alignment: Alignment.bottomCenter,
@@ -170,7 +173,7 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
 
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 40),
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 50),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -180,14 +183,25 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                     children: [
                       Hero(
                         tag: 'app_icon_${app.id}',
+                        flightShuttleBuilder: (_, anim, __, ___, ____) =>
+                            ScaleTransition(
+                          scale: Tween(begin: 0.6, end: 1.0).animate(
+                              CurvedAnimation(
+                                  parent: anim, curve: Curves.easeOutCubic)),
+                          child: AppIcon(
+                              iconUrl: app.icon,
+                              name: app.name,
+                              size: 110,
+                              radius: 26),
+                        ),
                         child: Container(
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(24),
+                            borderRadius: BorderRadius.circular(26),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.32),
-                                blurRadius: 28,
-                                offset: const Offset(0, 10),
+                                color: Colors.black.withOpacity(0.35),
+                                blurRadius: 30,
+                                offset: const Offset(0, 12),
                                 spreadRadius: -6,
                               ),
                             ],
@@ -196,7 +210,7 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                               iconUrl: app.icon,
                               name: app.name,
                               size: 110,
-                              radius: 24),
+                              radius: 26),
                         ),
                       ),
                       const SizedBox(width: 18),
@@ -208,14 +222,13 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                                 style: t.sf(
                                     size: 22,
                                     weight: FontWeight.w700,
-                                    letterSpacing: -0.4)),
+                                    letterSpacing: -0.5)),
                             if (app.developer.isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Text(app.developer,
-                                  style:
-                                      t.sf(size: 13, color: t.textSec)),
+                                  style: t.sf(size: 13, color: t.textSec)),
                             ],
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 7),
                             _CategoryBadge(label: app.category, t: t),
                           ],
                         ),
@@ -223,9 +236,9 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                     ],
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 22),
 
-                  // ── Download button ──────────────────────────────────────
+                  // ── CRITICAL FIX 1: Download button — triggers download immediately ──
                   GetButton(app: app, large: true),
 
                   const SizedBox(height: 32),
@@ -242,15 +255,13 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                             : CrossAxisAlignment.start,
                         children: [
                           AnimatedCrossFade(
-                            duration:
-                                const Duration(milliseconds: 280),
-                            sizeCurve: Curves.easeOut,
+                            duration: const Duration(milliseconds: 300),
+                            sizeCurve: Curves.easeOutCubic,
                             crossFadeState: _descExpanded
                                 ? CrossFadeState.showSecond
                                 : CrossFadeState.showFirst,
                             firstChild: _buildDescription(
-                              app.description.length > 220 &&
-                                      !_descExpanded
+                              app.description.length > 220 && !_descExpanded
                                   ? '${app.description.substring(0, 220)}…'
                                   : app.description,
                               t,
@@ -261,16 +272,14 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                           if (app.description.length > 220) ...[
                             const SizedBox(height: 10),
                             GestureDetector(
-                              onTap: () => setState(() =>
-                                  _descExpanded = !_descExpanded),
+                              onTap: () => setState(
+                                  () => _descExpanded = !_descExpanded),
                               child: Text(
-                                _descExpanded
-                                    ? 'Show less'
-                                    : 'Show more',
+                                _descExpanded ? 'Show less' : 'Show more',
                                 style: t.sf(
                                     size: 13,
                                     color: AppColors.accent,
-                                    weight: FontWeight.w500),
+                                    weight: FontWeight.w600),
                               ),
                             ),
                           ],
@@ -309,9 +318,10 @@ class _AppDetailsScreenState extends State<AppDetailsScreen> {
                     _SectionTitle(title: 'More Apps', t: t),
                     const SizedBox(height: 16),
                     SizedBox(
-                      height: 132,
+                      height: 138,
                       child: ListView.separated(
                         scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
                         itemCount: similar.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(width: 16),
@@ -355,12 +365,12 @@ class _CircleBtn extends StatelessWidget {
           width: 34,
           height: 34,
           decoration: BoxDecoration(
-            color: t.surface.withOpacity(0.88),
+            color: t.surface.withOpacity(0.90),
             shape: BoxShape.circle,
             border: Border.all(color: t.glassBorder, width: 0.5),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.12),
+                  color: Colors.black.withOpacity(0.14),
                   blurRadius: 8,
                   offset: const Offset(0, 2))
             ],
@@ -369,8 +379,8 @@ class _CircleBtn extends StatelessWidget {
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, anim) =>
                 ScaleTransition(scale: anim, child: child),
-            child:
-                Icon(icon, key: ValueKey(color), color: color, size: 17),
+            child: Icon(icon,
+                key: ValueKey(color.value), color: color, size: 17),
           ),
         ),
       ),
@@ -456,8 +466,7 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -521,14 +530,7 @@ class _MoreAppItemState extends State<_MoreAppItem>
         _ac.reverse();
         Navigator.push(
           context,
-          PageRouteBuilder(
-            pageBuilder: (_, anim, __) => AppDetailsScreen(app: a),
-            transitionsBuilder: (_, anim, __, child) => FadeTransition(
-                opacity: CurvedAnimation(
-                    parent: anim, curve: Curves.easeOut),
-                child: child),
-            transitionDuration: const Duration(milliseconds: 240),
-          ),
+          CupertinoPageRoute(builder: (_) => AppDetailsScreen(app: a)),
         );
       },
       onTapCancel: () => _ac.reverse(),
