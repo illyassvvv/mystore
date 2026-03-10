@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -36,7 +35,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
               child: Row(
                 children: [
                   Text('Favorites',
@@ -55,22 +54,14 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: t.surface,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(Icons.favorite_border_rounded,
-                            color: AppColors.red, size: 34),
-                      ),
-                      const SizedBox(height: 16),
+                      Icon(Icons.favorite_border_rounded,
+                          color: t.textTer, size: 54),
+                      const SizedBox(height: 14),
                       Text('No favorites yet',
-                          style: t.sf(size: 16, weight: FontWeight.w600)),
+                          style: t.sf(size: 15, color: t.textSec)),
                       const SizedBox(height: 6),
                       Text('Tap ♥ on any app to save it',
-                          style: t.sf(size: 13, color: t.textSec)),
+                          style: t.sf(size: 13, color: t.textTer)),
                     ],
                   ),
                 ),
@@ -78,8 +69,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
             else
               Expanded(
                 child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
-                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 120),
                   gridDelegate:
                       const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
@@ -89,13 +79,13 @@ class _FavoritesScreenState extends State<FavoritesScreen>
                   ),
                   itemCount: favs.length,
                   itemBuilder: (ctx, i) {
-                    final AppModel app = favs[i];
+                    final app = favs[i];
                     return _FavCard(
                       app: app,
                       t: t,
                       onTap: () => Navigator.push(
                         context,
-                        CupertinoPageRoute(
+                        MaterialPageRoute(
                             builder: (_) => AppDetailsScreen(app: app)),
                       ),
                       onRemove: () {
@@ -138,12 +128,14 @@ class _FavCardState extends State<_FavCard>
   void initState() {
     super.initState();
     _ac = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 220));
+        vsync: this, duration: const Duration(milliseconds: 200));
     _scale = Tween(begin: 1.0, end: 0.95)
         .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
     _heartScale = TweenSequence([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.4), weight: 40),
-      TweenSequenceItem(tween: Tween(begin: 1.4, end: 1.0), weight: 60),
+      TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 1.35), weight: 40),
+      TweenSequenceItem(
+          tween: Tween(begin: 1.35, end: 1.0), weight: 60),
     ]).animate(CurvedAnimation(parent: _ac, curve: Curves.elasticOut));
   }
 
@@ -174,10 +166,10 @@ class _FavCardState extends State<_FavCard>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color:
-                    Colors.black.withOpacity(t.isDark ? 0.20 : 0.07),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
+                color: Colors.black
+                    .withOpacity(t.isDark ? 0.2 : 0.07),
+                blurRadius: 10,
+                offset: const Offset(0, 3),
               ),
             ],
           ),
@@ -197,7 +189,6 @@ class _FavCardState extends State<_FavCard>
                         radius: 13),
                   ),
                   const Spacer(),
-                  // Heart with bounce animation
                   GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
@@ -207,7 +198,7 @@ class _FavCardState extends State<_FavCard>
                     child: ScaleTransition(
                       scale: _heartScale,
                       child: const Icon(Icons.favorite_rounded,
-                          color: AppColors.red, size: 22),
+                          color: AppColors.red, size: 20),
                     ),
                   ),
                 ],
