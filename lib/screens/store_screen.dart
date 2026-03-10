@@ -1,6 +1,5 @@
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -26,31 +25,34 @@ class _StoreScreenState extends State<StoreScreen>
   bool get wantKeepAlive => true;
 
   final _searchCtrl = TextEditingController();
-  final _searchFocus = FocusNode();
   bool _searching = false;
-  bool _searchFocused = false;
   final _featuredCtrl = PageController(viewportFraction: 0.88);
   int _featuredPage = 0;
 
   @override
-  void initState() {
-    super.initState();
-    _searchFocus.addListener(() {
-      setState(() => _searchFocused = _searchFocus.hasFocus);
-    });
-  }
-
-  @override
   void dispose() {
     _searchCtrl.dispose();
-    _searchFocus.dispose();
     _featuredCtrl.dispose();
     super.dispose();
   }
 
-  void _openDetail(AppModel app) {
-    Navigator.of(context, rootNavigator: false).push(
-      CupertinoPageRoute(builder: (_) => AppDetailsScreen(app: app)),
+  void _openDetail(BuildContext ctx, AppModel app) {
+    Navigator.push(
+      ctx,
+      PageRouteBuilder(
+        pageBuilder: (_, a, __) => AppDetailsScreen(app: app),
+        transitionsBuilder: (_, a, __, child) => FadeTransition(
+          opacity: CurvedAnimation(parent: a, curve: Curves.easeOut),
+          child: SlideTransition(
+            position:
+                Tween(begin: const Offset(0, 0.04), end: Offset.zero)
+                    .animate(
+                        CurvedAnimation(parent: a, curve: Curves.easeOut)),
+            child: child,
+          ),
+        ),
+        transitionDuration: const Duration(milliseconds: 300),
+      ),
     );
   }
 
@@ -59,48 +61,33 @@ class _StoreScreenState extends State<StoreScreen>
     super.build(context);
     final prov = context.watch<AppsProvider>();
     final t = AppTheme(context.watch<ThemeProvider>().isDark);
-    final all = prov.allApps;
-    final featured = all.take(5).toList();
-    // "Recently Updated" = apps 5-11 (next 6 after featured)
-    final recent = all.length > 5 ? all.skip(5).take(6).toList() : <AppModel>[];
-    final showFeatured = !_searching && featured.isNotEmpty && prov.state == LoadState.loaded;
-    final showRecent = !_searching && recent.isNotEmpty && prov.state == LoadState.loaded;
+    final featured = prov.allApps.take(5).toList();
+    final showFeatured =
+        !_searching && featured.isNotEmpty && prov.state == LoadState.loaded;
 
     return Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(
         bottom: false,
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(
-              parent: BouncingScrollPhysics()),
-          slivers: [
-            // ── Cupertino pull-to-refresh — no grey overlay ─────────────────
-            CupertinoSliverRefreshControl(
-              onRefresh: prov.fetch,
-              builder: (ctx, mode, pulledExtent, refreshTriggerPullDistance,
-                      refreshIndicatorExtent) =>
-                  Center(
+        child: RefreshIndicator(
+          color: AppColors.accent,
+          backgroundColor: t.surface,
+          onRefresh: () => prov.fetch(),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              // ── Header + search ────────────────────────────────────────────
+              SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: CupertinoActivityIndicator(
-                      color: AppColors.accent, radius: 12),
-                ),
-              ),
-            ),
-            // ── Header ──────────────────────────────────────────────────────
-            SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _StoreHeader(t: t),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
                       _SearchBar(
                         t: t,
                         ctrl: _searchCtrl,
-                        focusNode: _searchFocus,
-                        focused: _searchFocused,
                         searching: _searching,
                         onChanged: (q) {
                           prov.search(q);
@@ -109,7 +96,6 @@ class _StoreScreenState extends State<StoreScreen>
                         onClear: () {
                           _searchCtrl.clear();
                           prov.clearSearch();
-                          _searchFocus.unfocus();
                           setState(() => _searching = false);
                         },
                       ),
@@ -118,82 +104,83 @@ class _StoreScreenState extends State<StoreScreen>
                 ),
               ),
 
-              // ── Featured ─────────────────────────────────────────────────────
+              // ── Featured PageView ──────────────────────────────────────────
               if (showFeatured)
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 28),
-                      _SectionHeader(title: 'Featured', t: t),
+                      const SizedBox(height: 26),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 20),
+                        child: Text('Featured',
+                            style: t.sf(
+                                size: 20,
+                                weight: FontWeight.w700,
+                                letterSpacing: -0.3)),
+                      ),
                       const SizedBox(height: 12),
                       SizedBox(
-                        height: 210,
+                        height: 196,
                         child: PageView.builder(
                           controller: _featuredCtrl,
                           itemCount: featured.length,
-                          physics: const BouncingScrollPhysics(),
                           onPageChanged: (i) =>
                               setState(() => _featuredPage = i),
                           itemBuilder: (ctx, i) => Padding(
                             padding: EdgeInsets.only(
-                                left: i == 0 ? 20 : 0, right: 14),
+                                left: i == 0 ? 20 : 0, right: 12),
                             child: _FeaturedCard(
                               app: featured[i],
                               t: t,
-                              onTap: () => _openDetail(featured[i]),
+                              onTap: () =>
+                                  _openDetail(context, featured[i]),
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      _DotIndicator(
-                          count: featured.length, current: _featuredPage, t: t),
-                    ],
-                  ),
-                ),
-
-              // ── Recently Updated ──────────────────────────────────────────────
-              if (showRecent)
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 28),
-                      _SectionHeader(title: 'Recently Updated', t: t),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        height: 110,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          physics: const BouncingScrollPhysics(),
-                          itemCount: recent.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 14),
-                          itemBuilder: (ctx, i) => _RecentCard(
-                            app: recent[i],
-                            t: t,
-                            onTap: () => _openDetail(recent[i]),
-                          ),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: List.generate(featured.length, (i) {
+                            final sel = _featuredPage == i;
+                            return AnimatedContainer(
+                              duration:
+                                  const Duration(milliseconds: 260),
+                              curve: Curves.easeOut,
+                              margin: const EdgeInsets.symmetric(
+                                  horizontal: 3),
+                              width: sel ? 18 : 6,
+                              height: 6,
+                              decoration: BoxDecoration(
+                                color:
+                                    sel ? AppColors.accent : t.textTer,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            );
+                          }),
                         ),
                       ),
                     ],
                   ),
                 ),
 
-              // ── All Apps label ───────────────────────────────────────────────
+              // ── Section label ──────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
-                  child: _SectionHeader(
-                    title: _searching ? 'Search Results' : 'All Apps',
-                    t: t,
+                  padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                  child: Text(
+                    _searching ? 'Search Results' : 'All Apps',
+                    style: t.sf(
+                        size: 20,
+                        weight: FontWeight.w700,
+                        letterSpacing: -0.3),
                   ),
                 ),
               ),
 
-              // ── Content ──────────────────────────────────────────────────────
+              // ── Content ────────────────────────────────────────────────────
               if (prov.state == LoadState.loading)
                 const SliverFillRemaining(
                     hasScrollBody: false, child: AppShimmer())
@@ -206,11 +193,13 @@ class _StoreScreenState extends State<StoreScreen>
               else if (prov.apps.isEmpty)
                 SliverFillRemaining(
                   hasScrollBody: false,
-                  child: _EmptyView(hasSearch: prov.query.isNotEmpty, t: t),
+                  child:
+                      _EmptyView(hasSearch: prov.query.isNotEmpty, t: t),
                 )
               else
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 130),
+                  padding:
+                      const EdgeInsets.fromLTRB(16, 0, 16, 120),
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
@@ -223,63 +212,15 @@ class _StoreScreenState extends State<StoreScreen>
                       (ctx, i) => _GridCard(
                         app: prov.apps[i],
                         t: t,
-                        onTap: () => _openDetail(prov.apps[i]),
+                        onTap: () => _openDetail(context, prov.apps[i]),
                       ),
                       childCount: prov.apps.length,
                     ),
                   ),
                 ),
             ],
+          ),
         ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Section header
-// ─────────────────────────────────────────────────────────────────────────────
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final AppTheme t;
-  const _SectionHeader({required this.title, required this.t});
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Text(title,
-            style: t.sf(size: 20, weight: FontWeight.w700, letterSpacing: -0.4)),
-      );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dot indicator
-// ─────────────────────────────────────────────────────────────────────────────
-class _DotIndicator extends StatelessWidget {
-  final int count;
-  final int current;
-  final AppTheme t;
-  const _DotIndicator(
-      {required this.count, required this.current, required this.t});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(count, (i) {
-          final sel = current == i;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 280),
-            curve: Curves.easeOutCubic,
-            margin: const EdgeInsets.symmetric(horizontal: 3),
-            width: sel ? 20 : 6,
-            height: 6,
-            decoration: BoxDecoration(
-              color: sel ? AppColors.accent : t.textTer,
-              borderRadius: BorderRadius.circular(3),
-            ),
-          );
-        }),
       ),
     );
   }
@@ -304,9 +245,9 @@ class _StoreHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF007AFF).withOpacity(0.40),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF007AFF).withOpacity(0.38),
+            blurRadius: 22,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -316,10 +257,11 @@ class _StoreHeader extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.22),
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.apps_rounded, color: Colors.white, size: 26),
+            child:
+                const Icon(Icons.apps_rounded, color: Colors.white, size: 24),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -334,7 +276,7 @@ class _StoreHeader extends StatelessWidget {
                         letterSpacing: -0.5)),
                 Text('Discover & install your apps',
                     style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.80),
+                        color: Colors.white.withOpacity(0.78),
                         fontSize: 13)),
               ],
             ),
@@ -346,74 +288,47 @@ class _StoreHeader extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Search bar with focus expand animation
+// Search bar
 // ─────────────────────────────────────────────────────────────────────────────
 class _SearchBar extends StatelessWidget {
   final AppTheme t;
   final TextEditingController ctrl;
-  final FocusNode focusNode;
-  final bool focused;
   final bool searching;
   final ValueChanged<String> onChanged;
   final VoidCallback onClear;
-  const _SearchBar({
-    required this.t,
-    required this.ctrl,
-    required this.focusNode,
-    required this.focused,
-    required this.searching,
-    required this.onChanged,
-    required this.onClear,
-  });
+  const _SearchBar(
+      {required this.t,
+      required this.ctrl,
+      required this.searching,
+      required this.onChanged,
+      required this.onClear});
 
   @override
   Widget build(BuildContext context) {
-    // Use correct background: never grey — dark=surface2, light=white card
-    final bgColor = t.isDark ? const Color(0xFF2C2C2E) : const Color(0xFFFFFFFF);
-    final focusedBg = t.isDark ? const Color(0xFF3A3A3C) : const Color(0xFFFFFFFF);
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      height: 46,
+    return Container(
+      height: 44,
       decoration: BoxDecoration(
-        color: focused ? focusedBg : bgColor,
-        borderRadius: BorderRadius.circular(13),
-        border: focused
-            ? Border.all(color: AppColors.accent.withOpacity(0.45), width: 1.5)
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(t.isDark ? 0.20 : 0.06),
-            blurRadius: focused ? 14 : 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: t.surface,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
         controller: ctrl,
-        focusNode: focusNode,
         onChanged: onChanged,
         style: t.sf(size: 15),
-        cursorColor: AppColors.accent,
         decoration: InputDecoration(
-          hintText: 'Search apps...',
+          hintText: 'Search apps…',
           hintStyle: t.sf(size: 15, color: t.textSec),
-          prefixIcon: Icon(Icons.search_rounded,
-              color: focused ? AppColors.accent : t.textSec, size: 20),
+          prefixIcon:
+              Icon(Icons.search_rounded, color: t.textSec, size: 20),
           suffixIcon: searching
               ? IconButton(
-                  icon: Icon(Icons.close_rounded, color: t.textSec, size: 18),
+                  icon:
+                      Icon(Icons.close_rounded, color: t.textSec, size: 18),
                   onPressed: onClear,
                 )
               : null,
-          // Critical: override Material3 auto fill with explicit transparent
-          filled: true,
-          fillColor: Colors.transparent,
           border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12),
         ),
       ),
     );
@@ -421,7 +336,7 @@ class _SearchBar extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Featured card — iOS 26 premium
+// Featured card
 // ─────────────────────────────────────────────────────────────────────────────
 class _FeaturedCard extends StatefulWidget {
   final AppModel app;
@@ -440,11 +355,11 @@ class _FeaturedCardState extends State<_FeaturedCard>
   late final Animation<double> _scale;
 
   static const _bgs = [
-    [Color(0xFF0A0A1A), Color(0xFF0D1B3E)],
-    [Color(0xFF0C0A1F), Color(0xFF1A0A3E)],
-    [Color(0xFF0A1A0C), Color(0xFF0A2E18)],
-    [Color(0xFF1A0A0A), Color(0xFF2E0A12)],
-    [Color(0xFF0A1420), Color(0xFF0A2032)],
+    [Color(0xFF1A1A2E), Color(0xFF16213E)],
+    [Color(0xFF0F0C29), Color(0xFF302B63)],
+    [Color(0xFF000428), Color(0xFF004E92)],
+    [Color(0xFF1A0533), Color(0xFF330867)],
+    [Color(0xFF0D0D0D), Color(0xFF1C1C2E)],
   ];
 
   @override
@@ -466,7 +381,8 @@ class _FeaturedCardState extends State<_FeaturedCard>
   Widget build(BuildContext context) {
     final app = widget.app;
     final t = widget.t;
-    final bi = app.name.isNotEmpty ? app.name.codeUnitAt(0) % _bgs.length : 0;
+    final bi =
+        app.name.isNotEmpty ? app.name.codeUnitAt(0) % _bgs.length : 0;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -479,328 +395,110 @@ class _FeaturedCardState extends State<_FeaturedCard>
       child: ScaleTransition(
         scale: _scale,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: _bgs[bi],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Soft gaussian glow halo
-                if (app.icon.isNotEmpty)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 68,
-                    child: Center(
-                      child: ImageFiltered(
-                        imageFilter:
-                            ImageFilter.blur(sigmaX: 36, sigmaY: 36),
-                        child: Opacity(
-                          opacity: 0.60,
-                          child: CachedNetworkImage(
-                            imageUrl: app.icon,
-                            width: 100,
-                            height: 100,
-                            fit: BoxFit.contain,
-                            errorWidget: (_, __, ___) =>
-                                const SizedBox.shrink(),
-                          ),
-                        ),
-                      ),
-                    ),
+          borderRadius: BorderRadius.circular(22),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // Gradient background
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: _bgs[bi],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                ),
+              ),
 
-                // Radial glow ring
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 68,
-                  child: Center(
-                    child: Container(
-                      width: 160,
-                      height: 160,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Colors.white.withOpacity(0.06),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
+              // Blurred icon atmosphere
+              if (app.icon.isNotEmpty)
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.14,
+                    child: CachedNetworkImage(
+                      imageUrl: app.icon,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
 
-                // Sharp icon — 80px as specified
-                if (app.icon.isNotEmpty)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    bottom: 68,
-                    child: Center(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.50),
-                              blurRadius: 28,
-                              spreadRadius: -2,
-                              offset: const Offset(0, 12),
-                            ),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: CachedNetworkImage(
-                            imageUrl: app.icon,
-                            width: 80,
-                            height: 80,
-                            fit: BoxFit.cover,
-                            errorWidget: (_, __, ___) => AppIcon(
-                              iconUrl: '',
-                              name: app.name,
-                              size: 80,
-                              radius: 20,
+              // Glass bottom bar
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                    child: Container(
+                      color: Colors.black.withOpacity(0.38),
+                      padding:
+                          const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                      child: Row(
+                        children: [
+                          Hero(
+                            tag: 'app_icon_${app.id}',
+                            child: AppIcon(
+                                iconUrl: app.icon,
+                                name: app.name,
+                                size: 50,
+                                radius: 12),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(app.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -0.2)),
+                                Text(
+                                  app.developer.isNotEmpty
+                                      ? app.developer
+                                      : app.category,
+                                  style: GoogleFonts.inter(
+                                      color:
+                                          Colors.white.withOpacity(0.65),
+                                      fontSize: 12),
+                                ),
+                              ],
                             ),
                           ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // Gradient overlay at bottom
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  height: 120,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.55),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {},
+                            child: GetButton(app: app),
+                          ),
                         ],
                       ),
                     ),
                   ),
                 ),
-
-                // Glass bottom bar
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: ClipRect(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.07),
-                          border: Border(
-                            top: BorderSide(
-                              color: Colors.white.withOpacity(0.10),
-                              width: 0.5,
-                            ),
-                          ),
-                        ),
-                        padding:
-                            const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                        child: Row(
-                          children: [
-                            Hero(
-                              tag: 'app_icon_${app.id}',
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(10),
-                                child: CachedNetworkImage(
-                                  imageUrl: app.icon,
-                                  width: 38,
-                                  height: 38,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => AppIcon(
-                                    iconUrl: '',
-                                    name: app.name,
-                                    size: 38,
-                                    radius: 10,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(app.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.inter(
-                                          color: Colors.white,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: -0.1)),
-                                  Text(
-                                    app.developer.isNotEmpty
-                                        ? app.developer
-                                        : app.category,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                        color: Colors.white.withOpacity(0.52),
-                                        fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            // Intercept taps so they don't also trigger card navigation
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {},
-                              child: GetButton(app: app),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // FEATURED badge
-                Positioned(
-                  top: 12,
-                  left: 14,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 9, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent.withOpacity(0.85),
-                          borderRadius: BorderRadius.circular(7),
-                        ),
-                        child: Text('FEATURED',
-                            style: GoogleFonts.inter(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.9)),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Recently Updated card (horizontal list)
-// ─────────────────────────────────────────────────────────────────────────────
-class _RecentCard extends StatefulWidget {
-  final AppModel app;
-  final AppTheme t;
-  final VoidCallback onTap;
-  const _RecentCard(
-      {required this.app, required this.t, required this.onTap});
-
-  @override
-  State<_RecentCard> createState() => _RecentCardState();
-}
-
-class _RecentCardState extends State<_RecentCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ac;
-  late final Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _ac = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 120));
-    _scale = Tween(begin: 1.0, end: 0.94)
-        .animate(CurvedAnimation(parent: _ac, curve: Curves.easeOut));
-  }
-
-  @override
-  void dispose() {
-    _ac.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = widget.app;
-    final t = widget.t;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => _ac.forward(),
-      onTapUp: (_) {
-        _ac.reverse();
-        widget.onTap();
-      },
-      onTapCancel: () => _ac.reverse(),
-      child: ScaleTransition(
-        scale: _scale,
-        child: Container(
-          width: 200,
-          decoration: BoxDecoration(
-            color: t.surface,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(t.isDark ? 0.20 : 0.08),
-                blurRadius: 20,
-                offset: const Offset(0, 4),
               ),
-            ],
-          ),
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              AppIcon(
-                  iconUrl: app.icon, name: app.name, size: 50, radius: 12),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(app.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.sf(
-                            size: 13, weight: FontWeight.w600, height: 1.2)),
-                    const SizedBox(height: 2),
-                    Text(
-                      app.category.isNotEmpty ? app.category : app.developer,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: t.sf(size: 11, color: t.textSec),
-                    ),
-                    const SizedBox(height: 6),
-                    GetButton(app: app),
-                  ],
+
+              // FEATURED badge
+              Positioned(
+                top: 12,
+                left: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('FEATURED',
+                      style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8)),
                 ),
               ),
             ],
@@ -865,8 +563,9 @@ class _GridCardState extends State<_GridCard>
             borderRadius: BorderRadius.circular(20),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(t.isDark ? 0.18 : 0.08),
-                blurRadius: 20,
+                color:
+                    Colors.black.withOpacity(t.isDark ? 0.18 : 0.08),
+                blurRadius: 14,
                 offset: const Offset(0, 4),
               ),
             ],
@@ -887,11 +586,11 @@ class _GridCardState extends State<_GridCard>
               Text(app.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style:
-                      t.sf(size: 13, weight: FontWeight.w600, height: 1.3)),
+                  style: t.sf(
+                      size: 13, weight: FontWeight.w600, height: 1.3)),
               const SizedBox(height: 3),
               Text(
-                app.category.isNotEmpty ? app.category : app.developer,
+                app.developer.isNotEmpty ? app.developer : app.category,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: t.sf(size: 11, color: t.textSec),
@@ -911,7 +610,7 @@ class _GridCardState extends State<_GridCard>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Error / empty
+// Error / empty states
 // ─────────────────────────────────────────────────────────────────────────────
 class _ErrorView extends StatelessWidget {
   final String msg;
@@ -932,7 +631,8 @@ class _ErrorView extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                  color: t.surface, borderRadius: BorderRadius.circular(20)),
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(20)),
               child: const Icon(Icons.cloud_off_rounded,
                   color: AppColors.red, size: 34),
             ),
