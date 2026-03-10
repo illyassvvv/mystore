@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,9 +22,13 @@ void main() async {
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
+    statusBarBrightness: Brightness.dark,
     statusBarIconBrightness: Brightness.light,
     systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
   ));
+
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   runApp(
     MultiProvider(
@@ -44,10 +49,19 @@ class PremiumAppStore extends StatelessWidget {
   Widget build(BuildContext context) {
     final themeP = context.watch<ThemeProvider>();
     final t = AppTheme(themeP.isDark);
-    return MaterialApp(
+
+    // Use CupertinoApp at root so CupertinoPageRoute swipe-back works everywhere
+    return CupertinoApp(
       title: 'AppStore',
       debugShowCheckedModeBanner: false,
-      theme: t.themeData,
+      theme: CupertinoThemeData(
+        brightness: themeP.isDark ? Brightness.dark : Brightness.light,
+        primaryColor: AppColors.accent,
+        scaffoldBackgroundColor: t.bg,
+        textTheme: CupertinoTextThemeData(
+          primaryColor: AppColors.accent,
+        ),
+      ),
       home: const MainScaffold(),
     );
   }
