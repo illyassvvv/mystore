@@ -1,27 +1,35 @@
 name: Build Unsigned iOS IPA
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch:
   push:
     branches:
-      - main 
+      - main
 
 jobs:
   build:
     name: Build iOS IPA
-    runs-on: macos-latest 
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4 # تم التحديث إلى الإصدار الرابع
+        uses: actions/checkout@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
 
-      - name: Install Dependencies
+      - name: Clean project
+        run: flutter clean
+
+      - name: Get dependencies
         run: flutter pub get
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
 
       - name: Build iOS (No Codesign)
         run: flutter build ios --release --no-codesign
@@ -34,7 +42,7 @@ jobs:
           zip -r -9 VargasStore.ipa Payload
 
       - name: Upload IPA Artifact
-        uses: actions/upload-artifact@v4 # 🔥 تم حل المشكلة هنا باستخدام الإصدار الرابع 🔥
+        uses: actions/upload-artifact@v4
         with:
           name: VargasStore-Release
           path: build/ios/iphoneos/VargasStore.ipa
