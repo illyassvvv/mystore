@@ -1,54 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import 'providers/apps_provider.dart';
-import 'providers/downloads_provider.dart';
-import 'providers/theme_provider.dart';
-import 'screens/main_scaffold.dart';
-import 'theme/app_theme.dart';
+import 'models/theme.dart';
+import 'screens/home_screen.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  final themeProvider = ThemeProvider();
-  await themeProvider.init();
-
-  final appsProvider = AppsProvider();
-  await appsProvider.init();
-
-  final downloadsProvider = DownloadsProvider();
-  await downloadsProvider.init();
-
+  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarColor: AppTheme.bg,
   ));
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider.value(value: themeProvider),
-        ChangeNotifierProvider.value(value: appsProvider),
-        ChangeNotifierProvider.value(value: downloadsProvider),
-      ],
-      child: const PremiumAppStore(),
-    ),
-  );
+  runApp(const IlyassTvApp());
 }
 
-class PremiumAppStore extends StatelessWidget {
-  const PremiumAppStore({super.key});
+class IlyassTvApp extends StatelessWidget {
+  const IlyassTvApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final themeP = context.watch<ThemeProvider>();
-    final t = AppTheme(themeP.isDark);
     return MaterialApp(
-      title: 'AppStore',
+      title: 'ilyass tv',
       debugShowCheckedModeBanner: false,
-      theme: t.themeData,
-      home: const MainScaffold(),
+      theme: AppTheme.dark,
+      home: const HomeScreen(),
     );
   }
 }
